@@ -64,7 +64,9 @@ final class HiddenAreas {
 			double x = chunkX * 16 + 8, z = chunkZ * 16 + 8;
 			// A ragged edge: each chunk's own nudge of up to a chunk and a half
 			double nudge = hash(seed, chunkX, chunkZ) * 24;
-			if (Math.hypot(x - centreX, z - centreZ) < radius + nudge) return true;
+			// The asked radius is measured to the chunk's nearest block, so every block within it is covered
+			double nearX = Math.clamp(centreX, chunkX * 16, chunkX * 16 + 16), nearZ = Math.clamp(centreZ, chunkZ * 16, chunkZ * 16 + 16);
+			if (Math.hypot(nearX - centreX, nearZ - centreZ) <= radius + nudge) return true;
 			double edge = (smoothNoise(chunkX, chunkZ) - 0.5) * 2 * noise + nudge - 12;
 			for (Lump lump : lumps) if (lump.reach(x, z) + edge > 0) return true;
 			return false;
@@ -141,17 +143,38 @@ final class HiddenAreas {
 		return covers(folder, x >> 4, z >> 4);
 	}
 
-	/** Each covered chunk, as dimension folder and chunk x and z. */
-	void forEachChunk(ChunkVisitor visitor) throws Exception {
+	/**
+	 * Each covered chunk, as dimension folder and chunk x and z, a region at a time and only in regions
+	 * the filter lets through, so a large area over mostly unexplored land costs little; after each
+	 * region it visited, {@code afterRegion} runs.
+	 */
+	void forEachChunk(RegionFilter regions, ChunkVisitor visitor, Runnable afterRegion) throws Exception {
 		for (Shape shape : shapes) {
 			int[] bounds = shape.chunkBounds();
-			for (int x = bounds[0]; x <= bounds[2]; x++) {
-				for (int z = bounds[1]; z <= bounds[3]; z++) if (shape.covers(x, z)) visitor.visit(shape.folder, x, z);
+			for (int rx = Math.floorDiv(bounds[0], 32); rx <= Math.floorDiv(bounds[2], 32); rx++) {
+				for (int rz = Math.floorDiv(bounds[1], 32); rz <= Math.floorDiv(bounds[3], 32); rz++) {
+					if (!regions.has(shape.folder, rx, rz)) continue;
+					for (int x = Math.max(bounds[0], rx * 32); x <= Math.min(bounds[2], rx * 32 + 31); x++) {
+						for (int z = Math.max(bounds[1], rz * 32); z <= Math.min(bounds[3], rz * 32 + 31); z++) {
+							if (shape.covers(x, z)) visitor.visit(shape.folder, x, z);
+						}
+					}
+					afterRegion.run();
+				}
 			}
 		}
 	}
 
+	interface RegionFilter {
+		boolean has(String folder, int regionX, int regionZ) throws Exception;
+	}
+
 	interface ChunkVisitor {
 		void visit(String folder, int chunkX, int chunkZ) throws Exception;
+	}
+
+	/** Whether nothing is hidden. */
+	boolean isEmpty() {
+		return shapes.isEmpty();
 	}
 }

@@ -40,6 +40,8 @@ final class TileStore {
 
 	private final Path root;
 	private final Map<Tile, BufferedImage> unflushed = new HashMap<>();
+	/** Tiles read to see whether a chunk needs blanking, kept until the next flush so each is read once. */
+	private final Map<Tile, BufferedImage> readOnly = new HashMap<>();
 	/** Per dimension, the native tiles drawn so far: least x, least y, greatest x, greatest y. */
 	private final Map<String, int[]> extents = new TreeMap<>();
 	private final Map<String, Integer> floors = new HashMap<>();
@@ -54,17 +56,43 @@ final class TileStore {
 		extents.merge(dimension, new int[] { tile.x, tile.y, tile.x, tile.y }, TileStore::union);
 		BufferedImage image = unflushed.get(tile);
 		if (image == null) {
-			image = read(file(tile));
+			image = readOnly.remove(tile);
+			if (image == null) image = read(file(tile));
 			unflushed.put(tile, image);
 		}
 		image.setRGB(Math.floorMod(chunkX, 32) * 16, Math.floorMod(chunkZ, 32) * 16, 16, 16, colors, 0, 16);
 	}
 
-	/** Blanks one chunk where a tile of it was drawn; a chunk never drawn stays as it is, with no tile made for it. */
+	/**
+	 * Blanks one chunk where a tile of it was drawn. A chunk never drawn, or blank already, is left as it
+	 * is, with no tile made or written for it, so blanking the same area at every start writes nothing.
+	 */
 	void erase(String dimension, int chunkX, int chunkZ) throws IOException {
 		Tile tile = new Tile(dimension, NATIVE_ZOOM, Math.floorDiv(chunkX, 32), Math.floorDiv(chunkZ, 32));
-		if (!unflushed.containsKey(tile) && !Files.exists(file(tile))) return;
-		paint(dimension, chunkX, chunkZ, new int[256]);
+		BufferedImage image = unflushed.get(tile);
+		if (image == null) {
+			if (!readOnly.containsKey(tile) && !Files.exists(file(tile))) return;
+			image = readOnly.computeIfAbsent(tile, t -> {
+				try {
+					return read(file(t));
+				} catch (IOException e) {
+					throw new java.io.UncheckedIOException(e);
+				}
+			});
+		}
+		int[] pixels = image.getRGB(Math.floorMod(chunkX, 32) * 16, Math.floorMod(chunkZ, 32) * 16, 16, 16, null, 0, 16);
+		for (int pixel : pixels) {
+			if (pixel >>> 24 != 0) {
+				paint(dimension, chunkX, chunkZ, new int[256]);
+				return;
+			}
+		}
+	}
+
+	/** Whether any native tile of this region was drawn. */
+	boolean hasRegion(String dimension, int regionX, int regionZ) {
+		Tile tile = new Tile(dimension, NATIVE_ZOOM, regionX, regionZ);
+		return unflushed.containsKey(tile) || Files.exists(file(tile));
 	}
 
 	/**
@@ -73,6 +101,7 @@ final class TileStore {
 	 * next changes or loads. Answers whether anything was written.
 	 */
 	boolean flush() throws IOException {
+		readOnly.clear();
 		if (unflushed.isEmpty()) return false;
 		try {
 			Set<Tile> parents = new HashSet<>();

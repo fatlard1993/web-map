@@ -236,9 +236,19 @@ final class Drawing {
 	/** Any thread: hides these areas from now on, and blanks what was already drawn in them. */
 	void hide(HiddenAreas areas) {
 		hidden = areas;
-		output.later("blank the hidden areas", () -> {
-			areas.forEachChunk(this::blank);
-		});
-		flush();
+		if (areas.isEmpty()) return;
+		output.later("blank the hidden areas", () -> areas.forEachChunk(
+			(dimension, rx, rz) -> tiles.hasRegion(dimension, rx, rz) || tiles.hasRegion(cavesOf(dimension), rx, rz)
+				|| tiles.hasRegion(underOf(dimension), rx, rz) || info.hasRegion(dimension, rx, rz),
+			this::blank,
+			// A region at a time to disk, so a large area never holds many regions' pictures in memory at once
+			() -> {
+				try {
+					info.flush();
+					if (tiles.flush()) whenWritten.accept(tiles.extentsJson());
+				} catch (java.io.IOException e) {
+					throw new java.io.UncheckedIOException(e);
+				}
+			}));
 	}
 }

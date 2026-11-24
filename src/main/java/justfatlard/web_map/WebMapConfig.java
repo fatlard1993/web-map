@@ -40,6 +40,8 @@ final class WebMapConfig {
 	boolean border = true;
 	boolean daylight = true;
 	boolean backfill = true;
+	/** Set when the file could not be read, so nothing writes the stand-in settings over the admin's own. */
+	transient boolean unreadable;
 	boolean hideSneaking = true;
 	boolean hideUnderground = true;
 	int playerDelaySeconds = 30;
@@ -94,6 +96,7 @@ final class WebMapConfig {
 		if (config.dimensions == null) config.dimensions = DEFAULT_DIMENSIONS;
 		if (config.caves == null) config.caves = List.of();
 		if (config.hiddenAreas == null) config.hiddenAreas = new ArrayList<>();
+		config.hiddenAreas.removeIf(area -> area == null || area.name == null || area.dimension == null);
 		// Written back whenever it differs, so a setting added in an update shows up in the file
 		String written = GSON.toJson(config);
 		if (!written.equals(read)) {
@@ -108,6 +111,7 @@ final class WebMapConfig {
 
 	/** Writes the settings back, as a command that changed them asks. */
 	void save() {
+		if (unreadable) return;
 		Path path = FabricLoader.getInstance().getConfigDir().resolve(FILE);
 		try {
 			Files.writeString(path, GSON.toJson(this), StandardCharsets.UTF_8);
@@ -118,6 +122,7 @@ final class WebMapConfig {
 
 	private static WebMapConfig nothing() {
 		WebMapConfig none = new WebMapConfig();
+		none.unreadable = true;
 		none.dimensions = List.of();
 		none.caves = List.of();
 		none.players = none.homes = none.villages = none.spawn = none.portals = none.ships = none.photos = none.deaths = none.signs = none.beacons = none.border = none.daylight = none.backfill = false;

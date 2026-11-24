@@ -148,8 +148,8 @@ public class MapTests {
 		BlockPos at = helper.absolutePos(HIGH_UP);
 		var area = new HiddenAreas.Area("base", id, at.getX(), at.getZ(), 40);
 		HiddenAreas areas = new HiddenAreas(java.util.List.of(area), 42L);
-		for (int dx = -40; dx <= 40; dx += 8) {
-			for (int dz = -40; dz <= 40; dz += 8) {
+		for (int dx = -40; dx <= 40; dx += 2) {
+			for (int dz = -40; dz <= 40; dz += 2) {
 				if (dx * dx + dz * dz > 40 * 40) continue;
 				helper.assertTrue(areas.coversBlock(folder, at.getX() + dx, at.getZ() + dz),
 					Component.literal("everything within the radius is hidden, but " + dx + ", " + dz + " from the spot is not"));

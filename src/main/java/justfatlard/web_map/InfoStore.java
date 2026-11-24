@@ -46,6 +46,8 @@ final class InfoStore {
 	private final Path root;
 	private final Path kept;
 	private final Map<Region, BufferedImage> unflushed = new HashMap<>();
+	/** Pictures read to see whether a chunk needs blanking, kept until the next flush so each is read once. */
+	private final Map<Region, BufferedImage> readOnly = new HashMap<>();
 	private Palette palette = new Palette();
 	private final Map<String, Integer> blockNumbers = new HashMap<>();
 	private final Map<String, Integer> biomeNumbers = new HashMap<>();
@@ -76,7 +78,8 @@ final class InfoStore {
 		Region region = new Region(dimension, Math.floorDiv(chunkX, 32), Math.floorDiv(chunkZ, 32));
 		BufferedImage image = unflushed.get(region);
 		if (image == null) {
-			image = read(file(region));
+			image = readOnly.remove(region);
+			if (image == null) image = read(file(region));
 			unflushed.put(region, image);
 		}
 		int[] pixels = new int[512];
@@ -97,15 +100,35 @@ final class InfoStore {
 		image.setRGB(Math.floorMod(chunkX, 32) * 32, Math.floorMod(chunkZ, 32) * 16, 32, 16, pixels, 0, 32);
 	}
 
-	/** Blanks one chunk where a picture of it was drawn. */
+	/** Blanks one chunk where a picture of it was drawn, unless it is blank already. */
 	void erase(String dimension, int chunkX, int chunkZ) throws IOException {
 		Region region = new Region(dimension, Math.floorDiv(chunkX, 32), Math.floorDiv(chunkZ, 32));
-		if (!unflushed.containsKey(region) && !Files.exists(file(region))) return;
-		paint(dimension, chunkX, chunkZ, ChunkColors.Info.empty());
+		BufferedImage image = unflushed.get(region);
+		if (image == null) {
+			if (!readOnly.containsKey(region) && !Files.exists(file(region))) return;
+			image = readOnly.get(region);
+			if (image == null) {
+				image = read(file(region));
+				readOnly.put(region, image);
+			}
+		}
+		int[] pixels = image.getRGB(Math.floorMod(chunkX, 32) * 32, Math.floorMod(chunkZ, 32) * 16, 32, 16, null, 0, 32);
+		for (int pixel : pixels) {
+			if ((pixel & 0xFFFFFF) != 0) {
+				paint(dimension, chunkX, chunkZ, ChunkColors.Info.empty());
+				return;
+			}
+		}
+	}
+
+	boolean hasRegion(String dimension, int regionX, int regionZ) {
+		Region region = new Region(dimension, regionX, regionZ);
+		return unflushed.containsKey(region) || Files.exists(file(region));
 	}
 
 	/** Writes every picture painted since the last flush, and the palette when it grew. Whatever happens, they are let go. */
 	void flush() throws IOException {
+		readOnly.clear();
 		try {
 			for (Map.Entry<Region, BufferedImage> entry : unflushed.entrySet()) write(entry.getValue(), file(entry.getKey()));
 			if (paletteChanged) {

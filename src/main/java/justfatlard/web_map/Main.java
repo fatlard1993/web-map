@@ -84,8 +84,9 @@ public class Main implements DedicatedServerModInitializer {
 
 	/** Hides an area around where the command was run, in its dimension, from the map. */
 	private static int hide(CommandSourceStack source, String name, int radius) {
-		if (drawing == null) {
-			source.sendFailure(Component.literal("The map is not running"));
+		if (drawing == null || config.unreadable) {
+			source.sendFailure(Component.literal(drawing == null ? "The map is not running"
+				: "The map's config file could not be read, so nothing is changed until it is fixed"));
 			return 0;
 		}
 		BlockPos at = BlockPos.containing(source.getPosition());
@@ -99,6 +100,10 @@ public class Main implements DedicatedServerModInitializer {
 	}
 
 	private static int unhide(CommandSourceStack source, String name) {
+		if (drawing != null && config.unreadable) {
+			source.sendFailure(Component.literal("The map's config file could not be read, so nothing is changed until it is fixed"));
+			return 0;
+		}
 		if (drawing == null || !config.hiddenAreas.removeIf(area -> area.name.equals(name))) {
 			source.sendFailure(Component.literal("No hidden area named '" + name + "'"));
 			return 0;

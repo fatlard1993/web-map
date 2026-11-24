@@ -142,7 +142,9 @@ final class Layers {
 	private void writeMeta(MinecraftServer server) {
 		JsonObject meta = new JsonObject();
 		var spawn = server.overworld().getRespawnData().pos();
-		meta.add("spawn", spot(Dimensions.folder(Level.OVERWORLD), spawn.getX(), spawn.getZ()));
+		String overworld = Dimensions.folder(Level.OVERWORLD);
+		// Where the page opens, which says where spawn is as plainly as its marker would
+		if (config.spawn && shown(overworld, spawn.getX(), spawn.getZ())) meta.add("spawn", spot(overworld, spawn.getX(), spawn.getZ()));
 		JsonArray layers = new JsonArray();
 		config.layers().forEach((layer, on) -> {
 			if (on && installed(layer)) layers.add(layer);
