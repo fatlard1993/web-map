@@ -16,6 +16,9 @@ const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nethe
 const SHOWN_BY_DEFAULT = { grid: false };
 const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos'];
 const touch = matchMedia('(hover: none)').matches;
+// A pinch anywhere zooms the map, never the page: Safari on iOS ignores touch-action for pinches, so
+// its own gesture events are refused as well.
+document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
 const narrow = matchMedia('(max-width: 600px)').matches;
 
 // Latitude is z and longitude is x, so north stays up as it does on an in-game map.
@@ -315,7 +318,8 @@ function showStack(marker, members) {
 		if (kind.includes('portal') && kind.includes('acts')) div.title = 'Go to the other end';
 		if (style) div.style.setProperty('--portal', style);
 		L.DomEvent.on(div, 'click', e => { L.DomEvent.stop(e); onClick(); });
-		L.DomEvent.on(div, 'dblclick mousedown touchstart', L.DomEvent.stopPropagation);
+		// Only the double click stops here: a touch starting on a line may be one finger of a pinch, which the map must see
+		L.DomEvent.on(div, 'dblclick', L.DomEvent.stopPropagation);
 		element.append(div);
 	};
 	for (const m of members.slice(0, shows)) {

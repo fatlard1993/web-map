@@ -1,5 +1,9 @@
 :root { --bg: #1b1b1b; --fg: #eee; --panel: rgba(20, 20, 20, 0.85); }
 html, body, #map { height: 100%; margin: 0; background: var(--bg); }
+/* A pinch or double tap that starts on a panel over the map zooms the map, not the page; lists that
+   scroll still do, since their own scrolling is all they take */
+html, body { touch-action: none; overscroll-behavior: none; }
+.leaflet-control-layers-list, .leaflet-popup-content { touch-action: pan-y; }
 .leaflet-container { background: var(--bg); font: 13px/1.4 system-ui, sans-serif; }
 .pixelated img, img.pixelated { image-rendering: pixelated; }
 
