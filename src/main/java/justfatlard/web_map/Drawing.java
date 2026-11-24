@@ -101,6 +101,14 @@ final class Drawing {
 		if (waiting != null && waiting.remove(pos)) draw(level, chunk);
 		Long2IntMap colours = drawnColours.get(level);
 		if (colours != null) colours.remove(pos);
+		String dimension = Dimensions.folder(level.dimension());
+		output.later("forget the caves under an unloaded chunk", () -> forgetCaves(dimension, pos));
+	}
+
+	/** On the writer thread: the next cave view of this chunk is painted whatever it was before. */
+	private void forgetCaves(String dimension, long pos) {
+		Long2IntMap painted = caveHashes.get(dimension);
+		if (painted != null) painted.remove(pos);
 	}
 
 	void tick() {
@@ -225,6 +233,7 @@ final class Drawing {
 		tiles.erase(dimension, x, z);
 		tiles.erase(cavesOf(dimension), x, z);
 		tiles.erase(underOf(dimension), x, z);
+		forgetCaves(dimension, ChunkPos.pack(x, z));
 		info.erase(dimension, x, z);
 		marks.drawn(dimension, x, z, java.util.List.of());
 	}
