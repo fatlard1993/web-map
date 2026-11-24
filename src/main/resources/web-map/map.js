@@ -628,10 +628,15 @@ const playerMarkers = new Map();
 // farther than anyone walks in that time, a teleport, or the map is mid-zoom, when gliding would drift.
 const GLIDES_UP_TO = 96;
 let zooming = false;
+// Leaflet resets every marker's place on a zoom, and on a jump far enough to reset the view without one
+function stopGliding() {
+	for (const marker of playerMarkers.values()) marker.getElement()?.classList.remove('glide');
+}
 map.on('zoomstart', () => {
 	zooming = true;
-	for (const marker of playerMarkers.values()) marker.getElement()?.classList.remove('glide');
+	stopGliding();
 });
+map.on('viewprereset', stopGliding);
 map.on('zoomend', () => { zooming = false; });
 const elsewhere = document.getElementById('elsewhere');
 async function refreshPlayers() {
