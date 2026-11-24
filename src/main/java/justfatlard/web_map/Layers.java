@@ -36,6 +36,8 @@ import java.util.function.Supplier;
  */
 final class Layers {
 	private static final int PLAYERS_TICKS = 100;
+	/** How far under the surface a player counts as underground: deeper than a house is tall. */
+	private static final int UNDERGROUND_DEPTH = 8;
 	private static final int MARKERS_TICKS = 600;
 	private static final int SAVED_HOMES_TICKS = 12000;
 	private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
@@ -55,6 +57,9 @@ final class Layers {
 	private final DeathLog deaths;
 	private final Signs signs;
 	private final Faces faces;
+	private final Sightings<List<Spot>> sightings = new Sightings<>();
+
+	private record Spot(String name, String dimension, int x, int z, String wornName) {}
 	/** A layer whose mod threw or did not match this build: off until the server restarts. Both threads. */
 	private final Set<String> broken = ConcurrentHashMap.newKeySet();
 	private volatile JsonArray photos = new JsonArray();
@@ -150,19 +155,36 @@ final class Layers {
 		output.writeLater("meta.json", GSON.toJson(meta));
 	}
 
+	/**
+	 * Who is where, as it was the delay ago: a player is shown only where they were then, and only if
+	 * they are still online, so the map cannot be used to chase anyone. Spectators, the invisible, those
+	 * sneaking or underground, and those who asked to be left off are not seen at all.
+	 */
 	private void writePlayers(MinecraftServer server) {
-		JsonArray players = new JsonArray();
-		List<String> worn = new ArrayList<>();
+		List<Spot> now = new ArrayList<>();
+		Set<String> online = new HashSet<>();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			String name = player.getGameProfile().name();
+			online.add(name);
 			if (player.isSpectator() || player.isInvisible() || !shownOnMaps(server, player.getUUID())) continue;
+			if (config.hideSneaking && player.isShiftKeyDown()) continue;
+			if (config.hideUnderground && underground(player)) continue;
 			String dimension = Dimensions.folder(player.level().dimension());
 			if (!drawnFolders.contains(dimension)) continue;
-			String name = player.getGameProfile().name();
-			JsonObject entry = spot(dimension, (int) Math.floor(player.getX()), (int) Math.floor(player.getZ()));
-			entry.addProperty("name", name);
-			players.add(entry);
 			String wornName = OFFLINE_SKINS ? guarded("faces", () -> justfatlard.web_map.integration.SkinLayer.wornName(player.getUUID(), name)) : null;
-			worn.add(wornName);
+			now.add(new Spot(name, dimension, (int) Math.floor(player.getX()), (int) Math.floor(player.getZ()), wornName));
+		}
+		List<Spot> shown = sightings.see(System.currentTimeMillis(), now, config.playerDelaySeconds * 1000L);
+		if (shown == null) shown = List.of();
+
+		JsonArray players = new JsonArray();
+		List<String> worn = new ArrayList<>();
+		for (Spot spot : shown) {
+			if (!online.contains(spot.name())) continue;
+			JsonObject entry = spot(spot.dimension(), spot.x(), spot.z());
+			entry.addProperty("name", spot.name());
+			players.add(entry);
+			worn.add(spot.wornName());
 		}
 		// Faces are read from disk on the writer thread, and the list written once they are in place
 		output.later("draw faces and write players.json", () -> {
@@ -350,6 +372,14 @@ final class Layers {
 			}
 			photos = list;
 		});
+	}
+
+	/** Deeper under the surface than a house is tall, in a dimension without a roof over everything. */
+	static boolean underground(ServerPlayer player) {
+		if (player.level().dimensionType().hasCeiling()) return false;
+		int surface = player.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+			player.getBlockX(), player.getBlockZ());
+		return player.getY() < surface - UNDERGROUND_DEPTH;
 	}
 
 	/** Whether the player asked to be on maps, where Pandorical is there to ask; everyone is, without it. */

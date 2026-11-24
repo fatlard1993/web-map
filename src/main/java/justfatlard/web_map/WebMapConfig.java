@@ -37,6 +37,9 @@ final class WebMapConfig {
 	boolean border = true;
 	boolean daylight = true;
 	boolean backfill = true;
+	boolean hideSneaking = true;
+	boolean hideUnderground = true;
+	int playerDelaySeconds = 30;
 
 	Map<String, Boolean> layers() {
 		Map<String, Boolean> layers = new LinkedHashMap<>();

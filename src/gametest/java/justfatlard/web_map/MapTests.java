@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -137,6 +138,35 @@ public class MapTests {
 		int pixel = saved.colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
 		helper.assertTrue(isColourOf(Blocks.EMERALD_BLOCK, level, at, pixel),
 			Component.literal("the saved chunk's top block, emerald, not " + Integer.toHexString(pixel)));
+		helper.succeed();
+	}
+
+	@GameTest
+	public void positionsAreShownTheDelayLate(GameTestHelper helper) {
+		Sightings<String> sightings = new Sightings<>();
+		helper.assertTrue(sightings.see(0, "a", 30_000) == null, Component.literal("nothing is shown until something is the delay old"));
+		helper.assertTrue(sightings.see(5_000, "b", 30_000) == null, Component.literal("still nothing at 5 s"));
+		for (long t = 10_000; t < 30_000; t += 5_000) sightings.see(t, "x" + t, 30_000);
+		String at30 = sightings.see(30_000, "now", 30_000);
+		helper.assertTrue("a".equals(at30), Component.literal("at 30 s, what was seen at 0, not " + at30));
+		String at35 = sightings.see(35_000, "later", 30_000);
+		helper.assertTrue("b".equals(at35), Component.literal("at 35 s, what was seen at 5, not " + at35));
+		String undelayed = new Sightings<String>().see(1, "here", 0);
+		helper.assertTrue("here".equals(undelayed), Component.literal("with no delay, what is seen now"));
+		helper.succeed();
+	}
+
+	@GameTest(skyAccess = true)
+	public void aPlayerDeepUnderTheSurfaceIsUnderground(GameTestHelper helper) {
+		ServerPlayer player = helper.makeMockServerPlayerInLevel();
+		BlockPos column = helper.absolutePos(new BlockPos(1, 0, 1));
+		int surface = helper.getLevel().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ());
+		player.setPos(column.getX() + 0.5, surface, column.getZ() + 0.5);
+		helper.assertFalse(Layers.underground(player), Component.literal("standing on the surface is not underground"));
+		player.setPos(column.getX() + 0.5, surface - 5, column.getZ() + 0.5);
+		helper.assertFalse(Layers.underground(player), Component.literal("a house's height under its roof is not underground"));
+		player.setPos(column.getX() + 0.5, surface - 20, column.getZ() + 0.5);
+		helper.assertTrue(Layers.underground(player), Component.literal("20 blocks under the surface is underground"));
 		helper.succeed();
 	}
 
