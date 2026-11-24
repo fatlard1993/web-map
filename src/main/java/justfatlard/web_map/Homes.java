@@ -24,7 +24,7 @@ import java.util.UUID;
  * else from their saved player data, named from the server's user cache.
  */
 final class Homes {
-	record Home(String name, String dimension, int x, int z) {}
+	record Home(UUID player, String name, String dimension, int x, int z) {}
 
 	/** The last scan of saved players, replaced whole by the next. */
 	private volatile Map<UUID, Home> saved = Map.of();
@@ -42,7 +42,7 @@ final class Homes {
 					CompoundTag tag = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
 					tag.getCompound("respawn")
 						.flatMap(respawn -> ServerPlayer.RespawnConfig.CODEC.parse(NbtOps.INSTANCE, respawn).result())
-						.ifPresent(config -> scanned.put(id, home(names.getOrDefault(id, stem.substring(0, 8)), config)));
+						.ifPresent(config -> scanned.put(id, home(id, names.getOrDefault(id, stem.substring(0, 8)), config)));
 				} catch (Exception skipped) {
 					// Not a player's file, or one being written as we read it: the next scan reads it
 				}
@@ -60,14 +60,14 @@ final class Homes {
 		for (ServerPlayer player : online) {
 			ServerPlayer.RespawnConfig config = player.getRespawnConfig();
 			if (config == null) homes.remove(player.getUUID());
-			else homes.put(player.getUUID(), home(player.getGameProfile().name(), config));
+			else homes.put(player.getUUID(), home(player.getUUID(), player.getGameProfile().name(), config));
 		}
 		return homes.values();
 	}
 
-	private static Home home(String name, ServerPlayer.RespawnConfig config) {
+	private static Home home(UUID player, String name, ServerPlayer.RespawnConfig config) {
 		var data = config.respawnData();
-		return new Home(name, Dimensions.folder(data.dimension()), data.pos().getX(), data.pos().getZ());
+		return new Home(player, name, Dimensions.folder(data.dimension()), data.pos().getX(), data.pos().getZ());
 	}
 
 	private static Map<UUID, String> names(Path userCache) {

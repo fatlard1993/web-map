@@ -19,7 +19,7 @@ The Nether is drawn as a slice a little under its roof, so it shows the floor an
 The page can show, over the map:
 
 - **Players**, where everyone online is, every five seconds; spectators and invisible players are left off
-- **Homes**, the bed or respawn anchor of everyone who has played, online or not, by name
+- **Homes**, the bed or respawn anchor of everyone who has played, online or not, by name; with Pandorical installed, a player who turns off "Show me on maps" on its page of their settings is left off both of these
 - **Villages**, by name and size, when Village Quests is installed
 - **Spawn**
 - **Portal links**, when Player Portals is installed: each tied pair in its own colour, a hub's spokes as dotted lines, and where the far end is when it is in another world

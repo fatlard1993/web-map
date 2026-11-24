@@ -43,6 +43,7 @@ final class Layers {
 	private static final boolean PLAYER_PORTALS = FabricLoader.getInstance().isModLoaded("player-portals-justfatlard");
 	private static final boolean BIG_BOATS = FabricLoader.getInstance().isModLoaded("big-boats-justfatlard");
 	private static final boolean PHOTOGRAPHY = FabricLoader.getInstance().isModLoaded("redstone-photography");
+	private static final boolean PANDORICAL = FabricLoader.getInstance().isModLoaded("pandorical");
 
 	private final Output output;
 	private final WebMapConfig config;
@@ -127,7 +128,7 @@ final class Layers {
 	private void writePlayers(MinecraftServer server) {
 		JsonArray players = new JsonArray();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			if (player.isSpectator() || player.isInvisible()) continue;
+			if (player.isSpectator() || player.isInvisible() || !shownOnMaps(server, player.getUUID())) continue;
 			String dimension = Dimensions.folder(player.level().dimension());
 			if (!drawnFolders.contains(dimension)) continue;
 			JsonObject entry = spot(dimension, (int) Math.floor(player.getX()), (int) Math.floor(player.getZ()));
@@ -142,7 +143,7 @@ final class Layers {
 		if (config.homes) {
 			JsonArray list = new JsonArray();
 			for (Homes.Home home : homes.all(server.getPlayerList().getPlayers())) {
-				if (!drawnFolders.contains(home.dimension())) continue;
+				if (!drawnFolders.contains(home.dimension()) || !shownOnMaps(server, home.player())) continue;
 				JsonObject entry = spot(home.dimension(), home.x(), home.z());
 				entry.addProperty("name", home.name());
 				list.add(entry);
@@ -263,6 +264,11 @@ final class Layers {
 			}
 			photos = list;
 		});
+	}
+
+	/** Whether the player asked to be on maps, where Pandorical is there to ask; everyone is, without it. */
+	private static boolean shownOnMaps(MinecraftServer server, java.util.UUID player) {
+		return !PANDORICAL || justfatlard.web_map.integration.MapVisibility.shown(server, player);
 	}
 
 	/** A layer whose data comes from another mod is offered only where that mod is installed. */

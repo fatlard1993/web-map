@@ -15,14 +15,16 @@ repositories {
 dependencies {
 	// Optional integrations, compiled against the sibling checkouts' jars and never bundled: the
 	// village, portal, ship and photo layers need village-quests, player-portals, big-boats and
-	// redstone-photography, and each is offered only where its mod is installed.
+	// redstone-photography, each offered only where its mod is installed, and a player's choice
+	// not to be shown on maps is Pandorical's.
 	//
 	// Each sibling's path is written out whole: the nightly release finds what to clone and build
 	// first by reading these paths, and one assembled from a variable is invisible to it.
 	[[file("../village-quests/gradle.properties"), "village-quests"],
 	 [file("../player-portals/gradle.properties"), "player-portals-justfatlard"],
 	 [file("../big-boats/gradle.properties"), "big-boats-justfatlard"],
-	 [file("../redstone-photography/gradle.properties"), "redstone-photography"]].each { pair ->
+	 [file("../redstone-photography/gradle.properties"), "redstone-photography"],
+	 [file("../pandorical/gradle.properties"), "pandorical"]].each { pair ->
 		def properties = pair[0]
 		def mod = properties.parentFile.name
 		if (!properties.exists()) {
