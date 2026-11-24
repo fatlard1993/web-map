@@ -3,6 +3,16 @@
     "The world as a map in a web page, top-down and shaded the way in-game maps are, kept current as it changes."
   ],
   "versions": {
+    "0.1.3": [
+      "Click anywhere on the map to see its biome, what it is made of and how high it is, with buttons to copy its coordinates, a /tp command or a link, and the matching spot in the Nether or overworld.",
+      "The address bar holds where you are looking, so a link opens on the same spot; a search box finds players, homes, villages, portals, signs, beacons, shared places and deaths, or goes to typed coordinates; a ruler measures distances.",
+      "New layers: signs whose first line is [map], beacons with their effects and reach, places shared in TP Me Plz, where players died, the world border, night darkening the overworld, and the caves under the surface.",
+      "Sky builds such as cloud kingdoms can be hidden to see the ground under them.",
+      "Players show as their faces and glide between updates. For privacy they are shown 30 seconds late, and not at all while sneaking or deep underground.",
+      "Ops can hide an area from the map with /webmap hide; it looks like map nobody has explored.",
+      "Pinching on a phone zooms the map rather than the page.",
+      "The saved world is drawn once more, at low priority, so these details reach what was drawn before."
+    ],
     "0.1.2": [
       "The map zooms out as far as it takes to see the whole world, however far it has been explored, and a new button shows all of it at once.",
       "Labels that would overlap gather into one readable list, the others keeping their dots; clicking the list zooms in until they spread apart.",
