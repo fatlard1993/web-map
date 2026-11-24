@@ -12,6 +12,7 @@
     "issues": "https://github.com/fatlard1993/web-map/issues"
   },
   "license": "MIT",
+  "icon": "assets/web-map-justfatlard/icon.png",
   "environment": "server",
   "mixins": [
     "web-map-justfatlard.mixins.json"
@@ -32,5 +33,12 @@
     "player-portals-justfatlard": ">=1.1.6",
     "big-boats-justfatlard": "*",
     "redstone-photography": ">=1.1.10"
+  },
+  "custom": {
+    "modmenu": {
+      "links": {
+        "modmenu.donate": "https://github.com/sponsors/fatlard1993"
+      }
+    }
   }
 }
