@@ -982,6 +982,7 @@ const Daylight = L.Layer.extend({
 	},
 	onRemove() {
 		this.shade.remove();
+		this.shade = null;
 		clock.hidden = true;
 	},
 	// Only the overworld has days, and the shade covers the view wherever the map is moved
@@ -989,7 +990,7 @@ const Daylight = L.Layer.extend({
 		if (!this.shade) return;
 		const time = lastWorld.time;
 		// Caves have no daylight to lose
-		const shown = time !== undefined && dimension === 'minecraft_overworld' && !(layers.caves && map.hasLayer(layers.caves));
+		const shown = time !== undefined && dimension === 'minecraft_overworld' && !(layers.caves && layers.caves.current);
 		this.shade.style.opacity = shown ? darkness(time) : 0;
 		clock.hidden = time === undefined;
 		if (time !== undefined) clock.textContent = (darkness(time) > NIGHT / 2 ? 'Night, ' : 'Day, ') + hoursOf(time);
