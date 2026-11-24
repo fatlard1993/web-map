@@ -1,0 +1,18 @@
+{
+	"schemaVersion": 1,
+	"id": "web-map-gametest",
+	"version": "1.0.0",
+	"name": "Web Map game tests",
+	"description": "Drawing the top block, and a change reaching its tile.",
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			"justfatlard.web_map.MapTests"
+		]
+	},
+	"depends": {
+		"web-map-justfatlard": "*",
+		"fabric-gametest-api-v1": "*"
+	}
+}

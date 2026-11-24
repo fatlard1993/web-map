@@ -95,3 +95,28 @@ jar {
 	}
 }
 
+// Server gametests, not the client ones gametest.gradle gives the rest of the suite: a server-only mod
+// never loads in a client, and a server test runs headless.
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = "web-map-gametest"
+		enableGameTests = true
+		enableClientGameTests = false
+		eula = true
+	}
+}
+
+// As the rest of the suite does: a build compiles the tests, and running them, which starts a
+// server, is a deliberate act: ./gradlew verify
+afterEvaluate {
+	tasks.named('check') {
+		dependsOn.removeIf { it.toString().contains('runGameTest') }
+		dependsOn 'gametestClasses'
+	}
+}
+tasks.register('verify') {
+	group = 'verification'
+	description = 'Compiles and runs this mod\'s server gametests'
+	dependsOn 'check', 'runGameTest'
+}

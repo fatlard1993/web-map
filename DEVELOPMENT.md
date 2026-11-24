@@ -14,6 +14,10 @@ The village, portal, ship and photo layers compile against their mods' jars, so 
 ./gradlew build
 ```
 
+## Testing
+
+`./gradlew build` compiles the gametests; `./gradlew verify` runs them, on a headless test server: the top block of a column is the one drawn, and a change reaches its tile. They are server gametests, where the rest of the suite has client ones, because a server-only mod never loads in a client.
+
 ## Trying it
 
 `./gradlew runServer` starts a server in `run/`. With nobody connected almost no chunks load, so load some from the console, for example `forceload add -100 -100 100 100`; a `fill` high above them shows a change reaching the map within seconds. To try the integrated layers, put the built jars of Pandorical and the four mods above in `run/mods/`.
