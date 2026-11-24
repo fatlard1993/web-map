@@ -8,7 +8,7 @@ Install on the server alongside Fabric API (see `fabric.mod.json`); clients need
 
 ## Building
 
-The village, portal, ship and photo layers compile against their mods' jars, so `village-quests`, `player-portals`, `big-boats` and `redstone-photography` must be checked out and built beside this one (`mc-build <mod>`). The build says which is missing if one is.
+The village, portal, ship and photo layers, players' faces and the "Show me on maps" setting compile against their mods' jars, so `village-quests`, `player-portals`, `big-boats`, `redstone-photography`, `offline-skins` and `pandorical` must be checked out and built beside this one (`mc-build <mod>`). The build says which is missing if one is.
 
 ```
 ./gradlew build
@@ -16,7 +16,7 @@ The village, portal, ship and photo layers compile against their mods' jars, so 
 
 ## Testing
 
-`./gradlew build` compiles the gametests; `./gradlew verify` runs them, on a headless test server: the top block of a column is the one drawn, and a change reaches its tile. They are server gametests, where the rest of the suite has client ones, because a server-only mod never loads in a client.
+`./gradlew build` compiles the gametests; `./gradlew verify` runs them, on a headless test server: the top block of a column is the one drawn, a change reaches its tile and its info picture, the tiles reach down far enough to show everything drawn, map signs are found live and saved, the cave view shows a cave's floor but not a house's, a hidden area is never drawn, positions are shown the delay late, and deaths are kept. They are server gametests, where the rest of the suite has client ones, because a server-only mod never loads in a client.
 
 ## Trying it
 
