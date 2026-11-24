@@ -7,9 +7,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -29,6 +31,7 @@ final class Drawing {
 
 	private final Output output;
 	private final TileStore tiles;
+	private final InfoStore info;
 	private final Set<String> dimensions;
 	private final Map<ServerLevel, LongLinkedOpenHashSet> queued = new HashMap<>();
 	private final Map<ServerLevel, Long2IntMap> drawnColours = new HashMap<>();
@@ -40,9 +43,11 @@ final class Drawing {
 	 * @param whenWritten run on the writer thread with the tiles' extents, once what is on disk has been
 	 *                    read and after any flush that wrote tiles
 	 */
-	Drawing(Output output, Set<String> dimensions, Consumer<String> whenWritten) {
+	/** @param palette where the info pictures' palette is kept, in the world folder */
+	Drawing(Output output, Set<String> dimensions, Path palette, Consumer<String> whenWritten) {
 		this.output = output;
 		this.tiles = new TileStore(output.root.resolve("tiles"));
+		this.info = new InfoStore(output.root.resolve("info"), palette);
 		this.dimensions = dimensions;
 		this.whenWritten = whenWritten;
 		output.later("read the map tiles", () -> {
@@ -95,6 +100,7 @@ final class Drawing {
 	/** Writes what was painted since the last flush. */
 	void flush() {
 		output.later("write map tiles", () -> {
+			info.flush();
 			if (tiles.flush()) whenWritten.accept(tiles.extentsJson());
 		});
 	}
@@ -109,16 +115,17 @@ final class Drawing {
 	 * Any thread: a saved chunk's colours, painted in turn with the live ones. Asked again on the writer
 	 * thread whether the chunk was drawn live, since that may have happened after the saved copy was read.
 	 */
-	void paintSaved(ServerLevel level, String dimension, int x, int z, int[] colors) {
+	void paintSaved(ServerLevel level, String dimension, int x, int z, ChunkColors.Drawn drawn) {
 		long pos = ChunkPos.pack(x, z);
 		output.later("paint saved chunk " + x + ", " + z, () -> {
-			if (!drawnLive(level, pos)) tiles.paint(dimension, x, z, colors);
+			if (!drawnLive(level, pos)) paint(dimension, x, z, drawn);
 		});
 	}
 
 	/** Any thread: writes what was painted, completing once it is on disk, or with the error that stopped it. */
 	java.util.concurrent.CompletableFuture<Boolean> flushNow() {
 		return output.submit(() -> {
+			info.flush();
 			boolean wrote = tiles.flush();
 			if (wrote) whenWritten.accept(tiles.extentsJson());
 			return wrote;
@@ -135,8 +142,10 @@ final class Drawing {
 	}
 
 	private void draw(ServerLevel level, LevelChunk chunk) {
-		int[] colors = ChunkColors.of(level, chunk);
-		int hash = Arrays.hashCode(colors);
+		ChunkColors.Drawn drawn = ChunkColors.of(level, chunk);
+		ChunkColors.Info about = drawn.info();
+		int hash = Objects.hash(Arrays.hashCode(drawn.colors()), Arrays.hashCode(about.tops()), Arrays.hashCode(about.grounds()),
+			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()));
 		long pos = chunk.getPos().pack();
 		Long2IntMap colours = drawnColours.computeIfAbsent(level, l -> new Long2IntOpenHashMap());
 		if (colours.containsKey(pos) && colours.get(pos) == hash) return;
@@ -144,6 +153,12 @@ final class Drawing {
 		drawnLive.computeIfAbsent(level, l -> ConcurrentHashMap.newKeySet()).add(pos);
 		String dimension = Dimensions.folder(level.dimension());
 		int x = chunk.getPos().x(), z = chunk.getPos().z();
-		output.later("paint chunk " + x + ", " + z, () -> tiles.paint(dimension, x, z, colors));
+		output.later("paint chunk " + x + ", " + z, () -> paint(dimension, x, z, drawn));
+	}
+
+	/** On the writer thread. */
+	private void paint(String dimension, int x, int z, ChunkColors.Drawn drawn) throws java.io.IOException {
+		tiles.paint(dimension, x, z, drawn.colors());
+		info.paint(dimension, x, z, drawn.info());
 	}
 }

@@ -5,6 +5,9 @@ import com.google.gson.reflect.TypeToken;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.SharedConstants;
+import net.minecraft.core.Holder;
+import net.minecraft.core.QuartPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.MinecraftServer;
@@ -13,6 +16,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.SimpleBitStorage;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -156,7 +161,7 @@ final class Backfill {
 				}
 				if (colours == null) continue;
 				southEdges.put(pos.pack(), colours.southEdge());
-				drawing.paintSaved(level, dimension, pos.x(), pos.z(), colours.colors());
+				drawing.paintSaved(level, dimension, pos.x(), pos.z(), colours);
 				Thread.sleep(PAUSE_MILLIS);
 			}
 		}
@@ -201,6 +206,12 @@ final class Backfill {
 				int index = (y >> 4) - level.getMinSectionY();
 				if (index < 0 || index >= sections.length || sections[index] == null) return Blocks.AIR.defaultBlockState();
 				return sections[index].getBlockState(x & 15, y & 15, z & 15);
+			}
+
+			public Holder<Biome> biome(int x, int y, int z) {
+				int index = (y >> 4) - level.getMinSectionY();
+				if (index < 0 || index >= sections.length || sections[index] == null) return level.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS);
+				return sections[index].getNoiseBiome(QuartPos.fromBlock(x) & 3, QuartPos.fromBlock(y) & 3, QuartPos.fromBlock(z) & 3);
 			}
 
 			public int top(int x, int z) {

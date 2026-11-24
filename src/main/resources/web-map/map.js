@@ -584,6 +584,87 @@ async function copy(text, button) {
 
 // --- A spot: clicked, it says where it is, and what is there as far as the map knows ---
 
+// What is at a spot comes from the info pictures beside the tiles: two pixels a column, the first the
+// top block's palette number shifted up 12 bits and the biome's, the second the ground's under it and
+// the height plus 2048. Number 0 is nothing.
+const AROUND = 8;
+const infoPictures = new Map();
+let paletteFetch = null, paletteStamp = null;
+
+const prettyName = id => id.replace(/^[^:]*:/, '').split(/[_/]/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+
+function palette() {
+	if (!paletteFetch || paletteStamp !== tilesStamp) {
+		paletteStamp = tilesStamp;
+		paletteFetch = json('info/palette.json').catch(() => null);
+	}
+	return paletteFetch;
+}
+
+async function readPicture(url) {
+	const response = await fetch(url);
+	if (!response.ok) return null;
+	const bitmap = await createImageBitmap(await response.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+	const canvas = document.createElement('canvas');
+	canvas.width = bitmap.width;
+	canvas.height = bitmap.height;
+	const context = canvas.getContext('2d', { willReadFrequently: true });
+	context.drawImage(bitmap, 0, 0);
+	return { width: bitmap.width, data: context.getImageData(0, 0, bitmap.width, bitmap.height).data };
+}
+
+function infoPicture(folder, rx, rz) {
+	const url = 'info/' + folder + '/' + rx + '_' + rz + '.png?v=' + tilesStamp;
+	if (!infoPictures.has(url)) {
+		if (infoPictures.size >= 6) infoPictures.delete(infoPictures.keys().next().value);
+		infoPictures.set(url, readPicture(url).catch(() => null));
+	}
+	return infoPictures.get(url);
+}
+
+async function columnAt(folder, x, z) {
+	const picture = await infoPicture(folder, Math.floor(x / 512), Math.floor(z / 512));
+	if (!picture) return null;
+	const i = ((((z % 512) + 512) % 512) * picture.width + (((x % 512) + 512) % 512) * 2) * 4;
+	const d = picture.data;
+	const first = d[i] << 16 | d[i + 1] << 8 | d[i + 2], second = d[i + 4] << 16 | d[i + 5] << 8 | d[i + 6];
+	if (!(first >> 12)) return null;
+	return { top: first >> 12, biome: first & 0xFFF, ground: second >> 12, y: (second & 0xFFF) - 2048 };
+}
+
+const shares = counts => {
+	const total = [...counts.values()].reduce((a, b) => a + b, 0);
+	return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, n]) => Math.round(n * 100 / total) + '% ' + name).join(', ');
+};
+
+async function describeSpot(view, folder, x, z) {
+	const [names, here] = await Promise.all([palette(), columnAt(folder, x, z)]);
+	const line = (text, muted) => {
+		const p = document.createElement('p');
+		p.textContent = text;
+		if (muted) p.className = 'muted-text';
+		view.about.append(p);
+	};
+	if (!names || !here) return line('Nothing drawn here yet', true);
+	const block = n => n && names.blocks[n - 1] ? prettyName(names.blocks[n - 1]) : null;
+	const biome = n => n && names.biomes[n - 1] ? prettyName(names.biomes[n - 1]) : null;
+	view.spot.y = here.y + 1;
+	if (biome(here.biome)) line(biome(here.biome));
+	line((block(here.top) || 'Something') + (block(here.ground) ? ' over ' + block(here.ground) : '') + ', at y ' + here.y);
+	const materials = new Map(), biomes = new Map();
+	const columns = [];
+	for (let dz = -AROUND; dz < AROUND; dz++) for (let dx = -AROUND; dx < AROUND; dx++) columns.push(columnAt(folder, x + dx, z + dz));
+	for (const column of await Promise.all(columns)) {
+		if (!column) continue;
+		const name = block(column.ground) || block(column.top);
+		if (name) materials.set(name, (materials.get(name) || 0) + 1);
+		const b = biome(column.biome);
+		if (b) biomes.set(b, (biomes.get(b) || 0) + 1);
+	}
+	if (materials.size > 1) line('Around it: ' + shares(materials), true);
+	if (biomes.size > 1) line('Biomes near: ' + shares(biomes), true);
+}
+
 const OTHER_SIDE = { minecraft_overworld: ['minecraft_the_nether', 1 / 8], minecraft_the_nether: ['minecraft_overworld', 8] };
 
 function spotView(x, z) {
@@ -631,7 +712,9 @@ function spotView(x, z) {
 map.on('click', e => {
 	if (measuring) return;
 	const x = Math.floor(e.latlng.lng), z = Math.floor(e.latlng.lat);
-	L.popup({ maxWidth: 320, className: 'spot-popup' }).setLatLng(at(x, z)).setContent(spotView(x, z)).openOn(map);
+	const view = spotView(x, z);
+	const popup = L.popup({ maxWidth: 320, className: 'spot-popup' }).setLatLng(at(x, z)).setContent(view).openOn(map);
+	describeSpot(view, dimension, x, z).then(() => popup.update());
 });
 
 // --- Search: by name among everything the map shows, in any dimension, or by coordinates ---

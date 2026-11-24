@@ -9,6 +9,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.util.List;
 
@@ -65,6 +66,7 @@ public class Main implements DedicatedServerModInitializer {
 		output = new Output(FabricLoader.getInstance().getGameDir().resolve("web-map"));
 		Output writing = output;
 		drawing = new Drawing(output, config.drawnDimensions(),
+			server.getWorldPath(LevelResource.ROOT).resolve("web-map").resolve("info-palette.json"),
 			extents -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + ",\"extents\":" + extents + "}"));
 		layers = new Layers(output, config, server);
 		ticks = 0;

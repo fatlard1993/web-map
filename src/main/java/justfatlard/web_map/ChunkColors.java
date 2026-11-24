@@ -1,8 +1,13 @@
 package justfatlard.web_map;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.QuartPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -16,6 +21,10 @@ import net.minecraft.world.level.material.MapColor;
  * <p>Under a roof, the Nether's, looking down from the top meets only the roof, so such a column is
  * read from a slice a little under the dimension's ceiling instead: from inside rock it steps down to
  * the first opening and draws the floor below it, and rock all the way down is drawn as rock.
+ *
+ * <p>Each column is also described for the page to tell a viewer what is there: its top block, the
+ * ground under it when that differs (the sand under water, the grass block under a flower), its biome
+ * where the top block is, and the top block's height.
  *
  * <p>The same reading serves a loaded chunk, on the server thread, and a saved one parsed off it.
  */
@@ -31,17 +40,34 @@ final class ChunkColors {
 		int top(int x, int z);
 
 		BlockState at(int x, int y, int z);
+
+		Holder<Biome> biome(int x, int y, int z);
 	}
 
-	/** A chunk's colours, and the heights along its south edge, which the chunk south of it is shaded against. */
-	record Drawn(int[] colors, int[] southEdge) {}
+	/**
+	 * What is in each of a chunk's columns, indexed z * 16 + x: the top block, the ground under it or
+	 * null when that is the top block itself, the biome there, and the top block's height. A column with
+	 * nothing in it has a null top.
+	 */
+	record Info(Block[] tops, Block[] grounds, Holder<Biome>[] biomes, int[] heights) {
+		@SuppressWarnings("unchecked")
+		static Info empty() {
+			return new Info(new Block[256], new Block[256], new Holder[256], new int[256]);
+		}
+	}
 
-	static int[] of(ServerLevel level, LevelChunk chunk) {
+	/** A chunk's colours and what is in it, and the heights along its south edge, which the chunk south of it is shaded against. */
+	record Drawn(int[] colors, Info info, int[] southEdge) {}
+
+	/** How far under the top block the ground is looked for, past water, leaves and plants. */
+	private static final int GROUND_DEPTH = 128;
+
+	static Drawn of(ServerLevel level, LevelChunk chunk) {
 		int baseX = chunk.getPos().getMinBlockX(), baseZ = chunk.getPos().getMinBlockZ();
 		int slice = sliceOf(level);
 		LevelChunk north = level.getChunkSource().getChunkNow(chunk.getPos().x(), chunk.getPos().z() - 1);
 		int[] northEdge = north == null ? null : edge(loaded(north), level, slice, level.getMinY(), baseX, baseZ - 1);
-		return draw(loaded(chunk), level, slice, level.getMinY(), baseX, baseZ, northEdge).colors();
+		return draw(loaded(chunk), level, slice, level.getMinY(), baseX, baseZ, northEdge);
 	}
 
 	static int sliceOf(ServerLevel level) {
@@ -54,6 +80,7 @@ final class ChunkColors {
 	 */
 	static Drawn draw(Blocks blocks, BlockGetter getter, int slice, int minY, int baseX, int baseZ, int[] northEdge) {
 		int[] colors = new int[256];
+		Info info = Info.empty();
 		int[] southEdge = new int[16];
 		BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
@@ -68,6 +95,7 @@ final class ChunkColors {
 					previous = column.height;
 					continue;
 				}
+				describe(info, z * 16 + x, blocks, baseX + x, column.height, baseZ + z, minY);
 
 				MapColor.Brightness brightness;
 				if (column.waterDepth > 0) {
@@ -83,7 +111,27 @@ final class ChunkColors {
 				previous = column.height;
 			}
 		}
-		return new Drawn(colors, southEdge);
+		return new Drawn(colors, info, southEdge);
+	}
+
+	private static void describe(Info info, int index, Blocks blocks, int x, int y, int z, int minY) {
+		BlockState topState = blocks.at(x, y, z);
+		Block top = topState.getBlock();
+		info.tops[index] = top;
+		info.heights[index] = y;
+		info.biomes[index] = blocks.biome(x, y, z);
+		if (!isCover(topState)) return;
+		for (int below = y - 1; below >= Math.max(minY, y - GROUND_DEPTH); below--) {
+			BlockState state = blocks.at(x, below, z);
+			if (state.isAir() || !state.getFluidState().isEmpty() || state.is(BlockTags.LEAVES) || state.canBeReplaced()) continue;
+			if (state.getBlock() != top) info.grounds[index] = state.getBlock();
+			return;
+		}
+	}
+
+	/** Whether a top block lies over the ground rather than being it: water, leaves, plants, snow. */
+	private static boolean isCover(BlockState top) {
+		return !top.getFluidState().isEmpty() || top.is(BlockTags.LEAVES) || top.canBeReplaced();
 	}
 
 	/** The heights of one row of 16 columns, from x = baseX. */
@@ -103,6 +151,10 @@ final class ChunkColors {
 
 			public BlockState at(int x, int y, int z) {
 				return chunk.getBlockState(cursor.set(x, y, z));
+			}
+
+			public Holder<Biome> biome(int x, int y, int z) {
+				return chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(y), QuartPos.fromBlock(z));
 			}
 		};
 	}

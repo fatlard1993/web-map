@@ -25,7 +25,7 @@ public class MapTests {
 		helper.setBlock(HIGH_UP, Blocks.LAPIS_BLOCK);
 		BlockPos at = helper.absolutePos(HIGH_UP);
 		ServerLevel level = helper.getLevel();
-		int pixel = ChunkColors.of(level, level.getChunkAt(at))[(at.getZ() & 15) * 16 + (at.getX() & 15)];
+		int pixel = ChunkColors.of(level, level.getChunkAt(at)).colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
 		helper.assertTrue(isColourOf(Blocks.LAPIS_BLOCK, level, at, pixel),
 			Component.literal("the top block's colour, lapis, not " + Integer.toHexString(pixel)));
 		helper.succeed();
@@ -38,12 +38,12 @@ public class MapTests {
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root.resolve("palette.json"), extents -> { });
 
 		drawing.loaded(level, chunk);
 		drawing.tick();
 		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
-		int seen = ChunkColors.of(level, chunk)[(at.getZ() & 15) * 16 + (at.getX() & 15)];
+		int seen = ChunkColors.of(level, chunk).colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
 		helper.assertTrue(isColourOf(Blocks.GOLD_BLOCK, level, at, seen), Component.literal("the change, gold, read from the chunk, not " + Integer.toHexString(seen)));
 		drawing.changed(level, chunk.getPos());
 		drawing.tick();
@@ -59,6 +59,21 @@ public class MapTests {
 		int pixel = image.getRGB(Math.floorMod(at.getX(), 512), Math.floorMod(at.getZ(), 512));
 		helper.assertTrue(isColourOf(Blocks.GOLD_BLOCK, level, at, pixel),
 			Component.literal("the tile shows the gold placed, not " + Integer.toHexString(pixel)));
+
+		// The info picture names the gold, its biome and its height, through the palette
+		Path info = root.resolve("info").resolve(Dimensions.folder(level.dimension()))
+			.resolve(Math.floorDiv(at.getX(), 512) + "_" + Math.floorDiv(at.getZ(), 512) + ".png");
+		BufferedImage infoImage = ImageIO.read(info.toFile());
+		int first = infoImage.getRGB(Math.floorMod(at.getX(), 512) * 2, Math.floorMod(at.getZ(), 512)) & 0xFFFFFF;
+		int second = infoImage.getRGB(Math.floorMod(at.getX(), 512) * 2 + 1, Math.floorMod(at.getZ(), 512)) & 0xFFFFFF;
+		var palette = com.google.gson.JsonParser.parseString(Files.readString(root.resolve("info").resolve("palette.json"))).getAsJsonObject();
+		String top = palette.getAsJsonArray("blocks").get((first >> 12) - 1).getAsString();
+		String biome = palette.getAsJsonArray("biomes").get((first & 0xFFF) - 1).getAsString();
+		String expectedBiome = level.getBiome(at).unwrapKey().orElseThrow().identifier().toString();
+		helper.assertTrue(top.equals("minecraft:gold_block"), Component.literal("the info's top block is the gold, not " + top));
+		helper.assertTrue(biome.equals(expectedBiome), Component.literal("the info's biome is " + expectedBiome + ", not " + biome));
+		helper.assertTrue((second & 0xFFF) - 2048 == at.getY(), Component.literal("the info's height is " + at.getY() + ", not " + ((second & 0xFFF) - 2048)));
+		helper.assertTrue(second >> 12 == 0, Component.literal("gold is its own ground, so none is named"));
 		helper.succeed();
 	}
 
@@ -111,14 +126,15 @@ public class MapTests {
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root.resolve("palette.json"), extents -> { });
 
 		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
 		drawing.loaded(level, chunk);
 		drawing.tick();
 		int[] stale = new int[256];
 		java.util.Arrays.fill(stale, 0xFFFF0000);
-		drawing.paintSaved(level, Dimensions.folder(level.dimension()), chunk.getPos().x(), chunk.getPos().z(), stale);
+		drawing.paintSaved(level, Dimensions.folder(level.dimension()), chunk.getPos().x(), chunk.getPos().z(),
+			new ChunkColors.Drawn(stale, ChunkColors.Info.empty(), new int[16]));
 		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
 		output.close(30);
 
@@ -136,8 +152,9 @@ public class MapTests {
 		// A file where the tiles folder goes: nothing can be written under it, as on a full disk
 		Files.writeString(root.resolve("tiles"), "");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), extents -> { });
-		drawing.paintSaved(level, Dimensions.folder(level.dimension()), 1000000, 1000000, new int[256]);
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root.resolve("palette.json"), extents -> { });
+		drawing.paintSaved(level, Dimensions.folder(level.dimension()), 1000000, 1000000,
+			new ChunkColors.Drawn(new int[256], ChunkColors.Info.empty(), new int[16]));
 
 		boolean failed = false;
 		try {
