@@ -60,6 +60,13 @@ final class TileStore {
 		image.setRGB(Math.floorMod(chunkX, 32) * 16, Math.floorMod(chunkZ, 32) * 16, 16, 16, colors, 0, 16);
 	}
 
+	/** Blanks one chunk where a tile of it was drawn; a chunk never drawn stays as it is, with no tile made for it. */
+	void erase(String dimension, int chunkX, int chunkZ) throws IOException {
+		Tile tile = new Tile(dimension, NATIVE_ZOOM, Math.floorDiv(chunkX, 32), Math.floorDiv(chunkZ, 32));
+		if (!unflushed.containsKey(tile) && !Files.exists(file(tile))) return;
+		paint(dimension, chunkX, chunkZ, new int[256]);
+	}
+
 	/**
 	 * Writes every tile painted since the last flush, then redraws the zoomed-out tiles above them.
 	 * Whatever happens, the painted tiles are let go: one that failed is drawn again when its chunk

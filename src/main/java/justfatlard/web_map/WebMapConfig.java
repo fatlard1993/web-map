@@ -9,6 +9,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,6 +41,7 @@ final class WebMapConfig {
 	boolean hideSneaking = true;
 	boolean hideUnderground = true;
 	int playerDelaySeconds = 30;
+	List<HiddenAreas.Area> hiddenAreas = new ArrayList<>();
 
 	Map<String, Boolean> layers() {
 		Map<String, Boolean> layers = new LinkedHashMap<>();
@@ -80,6 +82,7 @@ final class WebMapConfig {
 		}
 		if (config == null) config = new WebMapConfig();
 		if (config.dimensions == null) config.dimensions = DEFAULT_DIMENSIONS;
+		if (config.hiddenAreas == null) config.hiddenAreas = new ArrayList<>();
 		// Written back whenever it differs, so a setting added in an update shows up in the file
 		String written = GSON.toJson(config);
 		if (!written.equals(read)) {
@@ -90,6 +93,16 @@ final class WebMapConfig {
 			}
 		}
 		return config;
+	}
+
+	/** Writes the settings back, as a command that changed them asks. */
+	void save() {
+		Path path = FabricLoader.getInstance().getConfigDir().resolve(FILE);
+		try {
+			Files.writeString(path, GSON.toJson(this), StandardCharsets.UTF_8);
+		} catch (Exception e) {
+			Output.LOGGER.warn("Could not write {}", path, e);
+		}
 	}
 
 	private static WebMapConfig nothing() {

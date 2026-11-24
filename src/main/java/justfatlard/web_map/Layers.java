@@ -57,6 +57,7 @@ final class Layers {
 	private final DeathLog deaths;
 	private final Signs signs;
 	private final Faces faces;
+	private final Supplier<HiddenAreas> hidden;
 	private final Sightings<List<Spot>> sightings = new Sightings<>();
 
 	private record Spot(String name, String dimension, int x, int z, String wornName) {}
@@ -64,8 +65,10 @@ final class Layers {
 	private final Set<String> broken = ConcurrentHashMap.newKeySet();
 	private volatile JsonArray photos = new JsonArray();
 
-	Layers(Output output, WebMapConfig config, MinecraftServer server, Signs signs) {
+	/** @param hidden the areas the map never shows, as they are now */
+	Layers(Output output, WebMapConfig config, MinecraftServer server, Signs signs, Supplier<HiddenAreas> hidden) {
 		this.output = output;
+		this.hidden = hidden;
 		this.signs = signs;
 		this.faces = new Faces(output.root.resolve("heads"));
 		this.config = config;
@@ -170,7 +173,7 @@ final class Layers {
 			if (config.hideSneaking && player.isShiftKeyDown()) continue;
 			if (config.hideUnderground && underground(player)) continue;
 			String dimension = Dimensions.folder(player.level().dimension());
-			if (!drawnFolders.contains(dimension)) continue;
+			if (!shown(dimension, player.getBlockX(), player.getBlockZ())) continue;
 			String wornName = OFFLINE_SKINS ? guarded("faces", () -> justfatlard.web_map.integration.SkinLayer.wornName(player.getUUID(), name)) : null;
 			now.add(new Spot(name, dimension, (int) Math.floor(player.getX()), (int) Math.floor(player.getZ()), wornName));
 		}
@@ -227,7 +230,7 @@ final class Layers {
 		if (config.homes) {
 			JsonArray list = new JsonArray();
 			for (Homes.Home home : homes.all(server.getPlayerList().getPlayers())) {
-				if (!drawnFolders.contains(home.dimension()) || !shownOnMaps(server, home.player())) continue;
+				if (!shown(home.dimension(), home.x(), home.z()) || !shownOnMaps(server, home.player())) continue;
 				JsonObject entry = spot(home.dimension(), home.x(), home.z());
 				entry.addProperty("name", home.name());
 				list.add(entry);
@@ -240,6 +243,7 @@ final class Layers {
 			if (villages != null && drawnFolders.contains(overworld)) {
 				JsonArray list = new JsonArray();
 				for (VillageLayer.Spot village : villages) {
+					if (!shown(overworld, village.x(), village.z())) continue;
 					JsonObject entry = spot(overworld, village.x(), village.z());
 					entry.addProperty("name", village.name());
 					entry.addProperty("radius", village.radius());
@@ -250,7 +254,8 @@ final class Layers {
 		}
 		if (config.spawn) {
 			var spawn = server.overworld().getRespawnData().pos();
-			markers.add("spawn", spot(Dimensions.folder(Level.OVERWORLD), spawn.getX(), spawn.getZ()));
+			String overworld = Dimensions.folder(Level.OVERWORLD);
+			if (shown(overworld, spawn.getX(), spawn.getZ())) markers.add("spawn", spot(overworld, spawn.getX(), spawn.getZ()));
 		}
 		if (config.portals && PLAYER_PORTALS) {
 			List<PortalLayer.Link> links = guarded("portals", () -> PortalLayer.links(server));
@@ -264,7 +269,7 @@ final class Layers {
 		if (config.signs) {
 			JsonArray list = new JsonArray();
 			for (Signs.Sign sign : signs.all()) {
-				if (!drawnFolders.contains(sign.dimension())) continue;
+				if (!shown(sign.dimension(), sign.x(), sign.z())) continue;
 				JsonObject entry = spot(sign.dimension(), sign.x(), sign.z());
 				entry.addProperty("y", sign.y());
 				entry.addProperty("text", sign.text());
@@ -275,7 +280,7 @@ final class Layers {
 		if (config.deaths) {
 			JsonArray list = new JsonArray();
 			for (DeathLog.Death death : deaths.all(System.currentTimeMillis())) {
-				if (!drawnFolders.contains(death.dimension()) || !shownOnMaps(server, java.util.UUID.fromString(death.player()))) continue;
+				if (!shown(death.dimension(), death.x(), death.z()) || !shownOnMaps(server, java.util.UUID.fromString(death.player()))) continue;
 				JsonObject entry = spot(death.dimension(), death.x(), death.z());
 				entry.addProperty("name", death.name());
 				entry.addProperty("y", death.y());
@@ -307,7 +312,7 @@ final class Layers {
 
 	private JsonObject end(PortalLayer.End end) {
 		String dimension = Dimensions.folder(end.dimension());
-		return drawnFolders.contains(dimension) ? spot(dimension, end.x(), end.z()) : null;
+		return shown(dimension, end.x(), end.z()) ? spot(dimension, end.x(), end.z()) : null;
 	}
 
 	private void sweepShips(MinecraftServer server) {
@@ -330,7 +335,7 @@ final class Layers {
 	private JsonArray shipMarkers() {
 		JsonArray list = new JsonArray();
 		for (ShipLog.Ship ship : ships.all()) {
-			if (!drawnFolders.contains(ship.dimension())) continue;
+			if (!shown(ship.dimension(), ship.x(), ship.z())) continue;
 			JsonObject entry = spot(ship.dimension(), ship.x(), ship.z());
 			if (ship.name() != null) entry.addProperty("name", ship.name());
 			entry.addProperty("blocks", ship.blocks());
@@ -357,7 +362,7 @@ final class Layers {
 			JsonArray list = new JsonArray();
 			for (PhotoLayer.Pin pin : pins) {
 				String dimension = Dimensions.folder(pin.dimension());
-				if (!drawnFolders.contains(dimension) || !Files.exists(pin.picture())) continue;
+				if (!shown(dimension, pin.x(), pin.z()) || !Files.exists(pin.picture())) continue;
 				Path copy = output.root.resolve("photos").resolve(pin.id() + ".png");
 				if (!Files.exists(copy) || Files.size(copy) != Files.size(pin.picture())) {
 					Files.createDirectories(copy.getParent());
@@ -372,6 +377,11 @@ final class Layers {
 			}
 			photos = list;
 		});
+	}
+
+	/** Whether a spot may be on the map: in a drawn dimension, and in no hidden area. */
+	private boolean shown(String dimension, int x, int z) {
+		return drawnFolders.contains(dimension) && !hidden.get().coversBlock(dimension, x, z);
 	}
 
 	/** Deeper under the surface than a house is tall, in a dimension without a roof over everything. */

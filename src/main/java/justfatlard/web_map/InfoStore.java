@@ -97,6 +97,13 @@ final class InfoStore {
 		image.setRGB(Math.floorMod(chunkX, 32) * 32, Math.floorMod(chunkZ, 32) * 16, 32, 16, pixels, 0, 32);
 	}
 
+	/** Blanks one chunk where a picture of it was drawn. */
+	void erase(String dimension, int chunkX, int chunkZ) throws IOException {
+		Region region = new Region(dimension, Math.floorDiv(chunkX, 32), Math.floorDiv(chunkZ, 32));
+		if (!unflushed.containsKey(region) && !Files.exists(file(region))) return;
+		paint(dimension, chunkX, chunkZ, ChunkColors.Info.empty());
+	}
+
 	/** Writes every picture painted since the last flush, and the palette when it grew. Whatever happens, they are let go. */
 	void flush() throws IOException {
 		try {

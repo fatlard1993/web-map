@@ -1,12 +1,20 @@
 package justfatlard.web_map;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -31,6 +39,7 @@ public class Main implements DedicatedServerModInitializer {
 	private static Backfill backfill;
 	private static WebMapConfig config;
 	private static int ticks;
+	private static long seed;
 
 	@Override
 	public void onInitializeServer() {
@@ -59,6 +68,56 @@ public class Main implements DedicatedServerModInitializer {
 			if (layers != null && entity instanceof ServerPlayer player) layers.died(player, source);
 		});
 		ServerTickEvents.END_SERVER_TICK.register(Main::tick);
+		CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) -> dispatcher.register(Commands.literal("webmap")
+			.requires(source -> Commands.LEVEL_GAMEMASTERS.check(source.permissions()))
+			.then(Commands.literal("hide")
+				.then(Commands.argument("name", StringArgumentType.string())
+					.then(Commands.argument("radius", IntegerArgumentType.integer(1, 4096))
+						.executes(context -> hide(context.getSource(), StringArgumentType.getString(context, "name"), IntegerArgumentType.getInteger(context, "radius"))))))
+			.then(Commands.literal("unhide")
+				.then(Commands.argument("name", StringArgumentType.string())
+					.suggests((context, builder) -> SharedSuggestionProvider.suggest(
+						config == null ? List.of() : config.hiddenAreas.stream().map(area -> area.name).toList(), builder))
+					.executes(context -> unhide(context.getSource(), StringArgumentType.getString(context, "name")))))
+			.then(Commands.literal("hidden").executes(context -> listHidden(context.getSource())))));
+	}
+
+	/** Hides an area around where the command was run, in its dimension, from the map. */
+	private static int hide(CommandSourceStack source, String name, int radius) {
+		if (drawing == null) {
+			source.sendFailure(Component.literal("The map is not running"));
+			return 0;
+		}
+		BlockPos at = BlockPos.containing(source.getPosition());
+		config.hiddenAreas.removeIf(area -> area.name.equals(name));
+		config.hiddenAreas.add(new HiddenAreas.Area(name, source.getLevel().dimension().identifier().toString(), at.getX(), at.getZ(), radius));
+		config.save();
+		drawing.hide(new HiddenAreas(config.hiddenAreas, seed));
+		source.sendSuccess(() -> Component.literal("Hid '" + name + "' from the map: about " + radius + " blocks around here,"
+			+ " in a shape that looks like map nobody has explored. Markers in it are gone at the next update."), true);
+		return 1;
+	}
+
+	private static int unhide(CommandSourceStack source, String name) {
+		if (drawing == null || !config.hiddenAreas.removeIf(area -> area.name.equals(name))) {
+			source.sendFailure(Component.literal("No hidden area named '" + name + "'"));
+			return 0;
+		}
+		config.save();
+		drawing.hide(new HiddenAreas(config.hiddenAreas, seed));
+		source.sendSuccess(() -> Component.literal("'" + name + "' is no longer hidden; it is drawn again as its chunks load or change"), true);
+		return 1;
+	}
+
+	private static int listHidden(CommandSourceStack source) {
+		if (config == null || config.hiddenAreas.isEmpty()) {
+			source.sendSuccess(() -> Component.literal("No areas are hidden from the map"), false);
+			return 0;
+		}
+		for (HiddenAreas.Area area : config.hiddenAreas) {
+			source.sendSuccess(() -> Component.literal(area.name + ": " + area.radius + " blocks around " + area.x + ", " + area.z + " in " + area.dimension), false);
+		}
+		return config.hiddenAreas.size();
 	}
 
 	/** Something in a chunk changed; called from the chunk itself, on the server thread. */
@@ -73,7 +132,9 @@ public class Main implements DedicatedServerModInitializer {
 		drawing = new Drawing(output, config.drawnDimensions(),
 			server.getWorldPath(LevelResource.ROOT).resolve("web-map"),
 			extents -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + ",\"extents\":" + extents + "}"));
-		layers = new Layers(output, config, server, drawing.signs());
+		layers = new Layers(output, config, server, drawing.signs(), drawing::hidden);
+		seed = server.getWorldGenSettings().options().seed();
+		drawing.hide(new HiddenAreas(config.hiddenAreas, seed));
 		ticks = 0;
 		for (String file : PAGE) {
 			try {

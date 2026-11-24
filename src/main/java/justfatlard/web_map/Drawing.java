@@ -33,6 +33,7 @@ final class Drawing {
 	private final TileStore tiles;
 	private final InfoStore info;
 	private final Signs signs;
+	private volatile HiddenAreas hidden = HiddenAreas.NONE;
 	private final Set<String> dimensions;
 	private final Map<ServerLevel, LongLinkedOpenHashSet> queued = new HashMap<>();
 	private final Map<ServerLevel, Long2IntMap> drawnColours = new HashMap<>();
@@ -160,8 +161,14 @@ final class Drawing {
 		output.later("paint chunk " + x + ", " + z, () -> paint(dimension, x, z, drawn));
 	}
 
-	/** On the writer thread. */
+	/** On the writer thread. A chunk in a hidden area is painted blank, as if never seen. */
 	private void paint(String dimension, int x, int z, ChunkColors.Drawn drawn) throws java.io.IOException {
+		if (hidden.covers(dimension, x, z)) {
+			tiles.erase(dimension, x, z);
+			info.erase(dimension, x, z);
+			signs.drawn(dimension, x, z, java.util.List.of());
+			return;
+		}
 		tiles.paint(dimension, x, z, drawn.colors());
 		info.paint(dimension, x, z, drawn.info());
 		signs.drawn(dimension, x, z, drawn.signs());
@@ -169,5 +176,22 @@ final class Drawing {
 
 	Signs signs() {
 		return signs;
+	}
+
+	HiddenAreas hidden() {
+		return hidden;
+	}
+
+	/** Any thread: hides these areas from now on, and blanks what was already drawn in them. */
+	void hide(HiddenAreas areas) {
+		hidden = areas;
+		output.later("blank the hidden areas", () -> {
+			areas.forEachChunk((dimension, x, z) -> {
+				tiles.erase(dimension, x, z);
+				info.erase(dimension, x, z);
+				signs.drawn(dimension, x, z, java.util.List.of());
+			});
+		});
+		flush();
 	}
 }

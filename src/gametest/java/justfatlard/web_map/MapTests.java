@@ -141,6 +141,49 @@ public class MapTests {
 		helper.succeed();
 	}
 
+	@GameTest(skyAccess = true)
+	public void aHiddenAreaIsNeverDrawnAndCoversItsSpot(GameTestHelper helper) throws Exception {
+		ServerLevel level = helper.getLevel();
+		String id = level.dimension().identifier().toString(), folder = Dimensions.folder(level.dimension());
+		BlockPos at = helper.absolutePos(HIGH_UP);
+		var area = new HiddenAreas.Area("base", id, at.getX(), at.getZ(), 40);
+		HiddenAreas areas = new HiddenAreas(java.util.List.of(area), 42L);
+		for (int dx = -40; dx <= 40; dx += 8) {
+			for (int dz = -40; dz <= 40; dz += 8) {
+				if (dx * dx + dz * dz > 40 * 40) continue;
+				helper.assertTrue(areas.coversBlock(folder, at.getX() + dx, at.getZ() + dz),
+					Component.literal("everything within the radius is hidden, but " + dx + ", " + dz + " from the spot is not"));
+			}
+		}
+		helper.assertFalse(areas.coversBlock(folder, at.getX() + 2000, at.getZ()), Component.literal("far away is not hidden"));
+		helper.assertFalse(areas.coversBlock("elsewhere", at.getX(), at.getZ()), Component.literal("another dimension is not hidden"));
+		HiddenAreas again = new HiddenAreas(java.util.List.of(area), 42L);
+		for (int x = -10; x <= 10; x++) for (int z = -10; z <= 10; z++) {
+			int cx = (at.getX() >> 4) + x, cz = (at.getZ() >> 4) + z;
+			helper.assertTrue(areas.covers(folder, cx, cz) == again.covers(folder, cx, cz), Component.literal("the shape is the same every time"));
+		}
+
+		// A chunk already drawn is blanked when hidden, and drawing it again keeps it blank
+		LevelChunk chunk = level.getChunkAt(at);
+		Path root = Files.createTempDirectory("web-map-test");
+		Output output = new Output(root);
+		Drawing drawing = new Drawing(output, Set.of(id), root, extents -> { });
+		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
+		drawing.loaded(level, chunk);
+		drawing.tick();
+		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
+		drawing.hide(areas);
+		helper.setBlock(HIGH_UP, Blocks.DIAMOND_BLOCK);
+		drawing.changed(level, chunk.getPos());
+		drawing.tick();
+		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
+		output.close(30);
+		BufferedImage image = ImageIO.read(tile(root, level, at).toFile());
+		int pixel = image.getRGB(Math.floorMod(at.getX(), 512), Math.floorMod(at.getZ(), 512));
+		helper.assertTrue(pixel >>> 24 == 0, Component.literal("the hidden chunk is blank, as if never seen, not " + Integer.toHexString(pixel)));
+		helper.succeed();
+	}
+
 	@GameTest
 	public void positionsAreShownTheDelayLate(GameTestHelper helper) {
 		Sightings<String> sightings = new Sightings<>();
