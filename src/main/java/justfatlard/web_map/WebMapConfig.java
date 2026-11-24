@@ -26,6 +26,7 @@ final class WebMapConfig {
 	private static final List<String> DEFAULT_DIMENSIONS = List.of("minecraft:overworld", "minecraft:the_nether", "minecraft:the_end");
 
 	List<String> dimensions = DEFAULT_DIMENSIONS;
+	List<String> caves = List.of("minecraft:overworld");
 	boolean players = true;
 	boolean homes = true;
 	boolean villages = true;
@@ -59,6 +60,13 @@ final class WebMapConfig {
 		return layers;
 	}
 
+	/** The drawn dimensions whose caves are drawn too. */
+	Set<String> caveDimensions() {
+		Set<String> drawn = new LinkedHashSet<>(caves);
+		drawn.retainAll(dimensions);
+		return drawn;
+	}
+
 	/** In the order listed, which is the order the page offers them. */
 	Set<String> drawnDimensions() {
 		return new LinkedHashSet<>(dimensions);
@@ -82,6 +90,7 @@ final class WebMapConfig {
 		}
 		if (config == null) config = new WebMapConfig();
 		if (config.dimensions == null) config.dimensions = DEFAULT_DIMENSIONS;
+		if (config.caves == null) config.caves = List.of();
 		if (config.hiddenAreas == null) config.hiddenAreas = new ArrayList<>();
 		// Written back whenever it differs, so a setting added in an update shows up in the file
 		String written = GSON.toJson(config);
@@ -108,6 +117,7 @@ final class WebMapConfig {
 	private static WebMapConfig nothing() {
 		WebMapConfig none = new WebMapConfig();
 		none.dimensions = List.of();
+		none.caves = List.of();
 		none.players = none.homes = none.villages = none.spawn = none.portals = none.ships = none.photos = none.deaths = none.signs = none.border = none.daylight = none.backfill = false;
 		return none;
 	}

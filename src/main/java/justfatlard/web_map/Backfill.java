@@ -151,7 +151,7 @@ final class Backfill {
 				if (drawing.drawnLive(level, pos.pack())) continue;
 				ChunkColors.Drawn colours;
 				try {
-					colours = drawSaved(level, pos, southEdges.get(ChunkPos.pack(pos.x(), pos.z() - 1)));
+					colours = drawSaved(level, pos, southEdges.get(ChunkPos.pack(pos.x(), pos.z() - 1)), drawing.drawsCaves(level));
 				} catch (Exception e) {
 					// One damaged chunk leaves only itself blank
 					if (stopping) return;
@@ -177,7 +177,7 @@ final class Backfill {
 	}
 
 	/** A saved chunk's colours as it was saved, or null when it was never fully generated or saved. */
-	static ChunkColors.Drawn drawSaved(ServerLevel level, ChunkPos pos, int[] northEdge) {
+	static ChunkColors.Drawn drawSaved(ServerLevel level, ChunkPos pos, int[] northEdge, boolean caves) {
 		CompoundTag tag = level.getChunkSource().chunkMap.read(pos).join().orElse(null);
 		if (tag == null) return null;
 		if (NbtUtils.getDataVersion(tag, -1) < SharedConstants.getCurrentVersion().dataVersion().version()) {
@@ -186,9 +186,10 @@ final class Backfill {
 		SerializableChunkData data = SerializableChunkData.parse(level, level.palettedContainerFactory(), tag);
 		if (data.chunkStatus() != ChunkStatus.FULL) return null;
 		int minY = level.getMinY();
-		return ChunkColors.draw(saved(data, level, minY, Mth.ceillog2(level.getHeight() + 1)), EmptyBlockGetter.INSTANCE,
-			ChunkColors.sliceOf(level), minY, pos.getMinBlockX(), pos.getMinBlockZ(), northEdge)
-			.withSigns(Signs.saved(Dimensions.folder(level.dimension()), data.blockEntities(), level.registryAccess()));
+		ChunkColors.Blocks blocks = saved(data, level, minY, Mth.ceillog2(level.getHeight() + 1));
+		return ChunkColors.draw(blocks, EmptyBlockGetter.INSTANCE, ChunkColors.sliceOf(level), minY, pos.getMinBlockX(), pos.getMinBlockZ(), northEdge)
+			.withSigns(Signs.saved(Dimensions.folder(level.dimension()), data.blockEntities(), level.registryAccess()))
+			.withCaves(caves ? ChunkColors.caves(blocks, EmptyBlockGetter.INSTANCE, minY, pos.getMinBlockX(), pos.getMinBlockZ()) : null);
 	}
 
 	/** A parsed saved chunk's blocks; a column without a stored height is found by looking down from the top. */

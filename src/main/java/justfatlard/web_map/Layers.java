@@ -155,6 +155,9 @@ final class Layers {
 			}
 		}
 		meta.add("dimensions", folders);
+		JsonArray caves = new JsonArray();
+		for (String id : config.caveDimensions()) caves.add(Dimensions.folder(id));
+		meta.add("caves", caves);
 		output.writeLater("meta.json", GSON.toJson(meta));
 	}
 

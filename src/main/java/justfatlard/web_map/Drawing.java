@@ -5,6 +5,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.nio.file.Path;
@@ -35,8 +36,11 @@ final class Drawing {
 	private final Signs signs;
 	private volatile HiddenAreas hidden = HiddenAreas.NONE;
 	private final Set<String> dimensions;
+	private final Set<String> caveDimensions;
 	private final Map<ServerLevel, LongLinkedOpenHashSet> queued = new HashMap<>();
 	private final Map<ServerLevel, Long2IntMap> drawnColours = new HashMap<>();
+	/** The cave view last painted for each live chunk, by dimension and position; writer thread only. */
+	private final Map<String, Long2IntMap> caveHashes = new HashMap<>();
 	/** Chunks drawn from the live world since the server started, which a saved copy must not overwrite. */
 	private final Map<ServerLevel, Set<Long>> drawnLive = new ConcurrentHashMap<>();
 	private final Consumer<String> whenWritten;
@@ -46,7 +50,9 @@ final class Drawing {
 	 *                    read and after any flush that wrote tiles
 	 */
 	/** @param kept the world folder's web-map folder, where what is read back at start is kept */
-	Drawing(Output output, Set<String> dimensions, Path kept, Consumer<String> whenWritten) {
+	/** @param caveDimensions the dimensions, by id, whose caves are drawn as well, as {@code <folder>.caves} */
+	Drawing(Output output, Set<String> dimensions, Set<String> caveDimensions, Path kept, Consumer<String> whenWritten) {
+		this.caveDimensions = caveDimensions;
 		this.output = output;
 		this.tiles = new TileStore(output.root.resolve("tiles"));
 		this.info = new InfoStore(output.root.resolve("info"), kept.resolve("info-palette.json"));
@@ -61,6 +67,14 @@ final class Drawing {
 
 	boolean draws(ServerLevel level) {
 		return dimensions.contains(level.dimension().identifier().toString());
+	}
+
+	boolean drawsCaves(ServerLevel level) {
+		return caveDimensions.contains(level.dimension().identifier().toString());
+	}
+
+	static String cavesOf(String dimension) {
+		return dimension + ".caves";
 	}
 
 	void loaded(ServerLevel level, LevelChunk chunk) {
@@ -146,36 +160,65 @@ final class Drawing {
 		queued.computeIfAbsent(level, l -> new LongLinkedOpenHashSet()).add(pos);
 	}
 
+	/**
+	 * The surface is read here, on the server thread; the caves, which may look all the way down every
+	 * column, are read on the writer thread from a copy of the chunk's blocks, and painted there only
+	 * when they changed, since digging underground changes nothing the surface's check would see.
+	 */
 	private void draw(ServerLevel level, LevelChunk chunk) {
-		ChunkColors.Drawn drawn = ChunkColors.of(level, chunk);
+		long pos = chunk.getPos().pack();
+		String dimension = Dimensions.folder(level.dimension());
+		int x = chunk.getPos().x(), z = chunk.getPos().z();
+		drawnLive.computeIfAbsent(level, l -> ConcurrentHashMap.newKeySet()).add(pos);
+		if (drawsCaves(level)) {
+			ChunkColors.Blocks copy = ChunkColors.copyOf(chunk);
+			int minY = level.getMinY();
+			output.later("draw caves under " + x + ", " + z, () -> paintCaves(dimension, x, z,
+				ChunkColors.caves(copy, EmptyBlockGetter.INSTANCE, minY, x * 16, z * 16)));
+		}
+		ChunkColors.Drawn drawn = ChunkColors.of(level, chunk, false);
 		ChunkColors.Info about = drawn.info();
 		int hash = Objects.hash(Arrays.hashCode(drawn.colors()), Arrays.hashCode(about.tops()), Arrays.hashCode(about.grounds()),
 			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()), drawn.signs());
-		long pos = chunk.getPos().pack();
 		Long2IntMap colours = drawnColours.computeIfAbsent(level, l -> new Long2IntOpenHashMap());
 		if (colours.containsKey(pos) && colours.get(pos) == hash) return;
 		colours.put(pos, hash);
-		drawnLive.computeIfAbsent(level, l -> ConcurrentHashMap.newKeySet()).add(pos);
-		String dimension = Dimensions.folder(level.dimension());
-		int x = chunk.getPos().x(), z = chunk.getPos().z();
 		output.later("paint chunk " + x + ", " + z, () -> paint(dimension, x, z, drawn));
+	}
+
+	/** On the writer thread: the cave view of one live chunk, painted when it changed. */
+	private void paintCaves(String dimension, int x, int z, int[] caves) throws java.io.IOException {
+		if (hidden.covers(dimension, x, z)) return;
+		long key = ChunkPos.pack(x, z);
+		int hash = Arrays.hashCode(caves);
+		Long2IntMap painted = caveHashes.computeIfAbsent(dimension, d -> new Long2IntOpenHashMap());
+		if (painted.containsKey(key) && painted.get(key) == hash) return;
+		painted.put(key, hash);
+		tiles.paint(cavesOf(dimension), x, z, caves);
 	}
 
 	/** On the writer thread. A chunk in a hidden area is painted blank, as if never seen. */
 	private void paint(String dimension, int x, int z, ChunkColors.Drawn drawn) throws java.io.IOException {
 		if (hidden.covers(dimension, x, z)) {
-			tiles.erase(dimension, x, z);
-			info.erase(dimension, x, z);
-			signs.drawn(dimension, x, z, java.util.List.of());
+			blank(dimension, x, z);
 			return;
 		}
 		tiles.paint(dimension, x, z, drawn.colors());
+		if (drawn.caves() != null) tiles.paint(cavesOf(dimension), x, z, drawn.caves());
 		info.paint(dimension, x, z, drawn.info());
 		signs.drawn(dimension, x, z, drawn.signs());
 	}
 
 	Signs signs() {
 		return signs;
+	}
+
+	/** On the writer thread: a chunk as if never seen, wherever something of it was drawn. */
+	private void blank(String dimension, int x, int z) throws java.io.IOException {
+		tiles.erase(dimension, x, z);
+		tiles.erase(cavesOf(dimension), x, z);
+		info.erase(dimension, x, z);
+		signs.drawn(dimension, x, z, java.util.List.of());
 	}
 
 	HiddenAreas hidden() {
@@ -186,11 +229,7 @@ final class Drawing {
 	void hide(HiddenAreas areas) {
 		hidden = areas;
 		output.later("blank the hidden areas", () -> {
-			areas.forEachChunk((dimension, x, z) -> {
-				tiles.erase(dimension, x, z);
-				info.erase(dimension, x, z);
-				signs.drawn(dimension, x, z, java.util.List.of());
-			});
+			areas.forEachChunk(this::blank);
 		});
 		flush();
 	}

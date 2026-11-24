@@ -129,7 +129,7 @@ public class Main implements DedicatedServerModInitializer {
 		config = WebMapConfig.load();
 		output = new Output(FabricLoader.getInstance().getGameDir().resolve("web-map"));
 		Output writing = output;
-		drawing = new Drawing(output, config.drawnDimensions(),
+		drawing = new Drawing(output, config.drawnDimensions(), config.caveDimensions(),
 			server.getWorldPath(LevelResource.ROOT).resolve("web-map"),
 			extents -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + ",\"extents\":" + extents + "}"));
 		layers = new Layers(output, config, server, drawing.signs(), drawing::hidden);

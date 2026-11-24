@@ -26,7 +26,7 @@ public class MapTests {
 		helper.setBlock(HIGH_UP, Blocks.LAPIS_BLOCK);
 		BlockPos at = helper.absolutePos(HIGH_UP);
 		ServerLevel level = helper.getLevel();
-		int pixel = ChunkColors.of(level, level.getChunkAt(at)).colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
+		int pixel = ChunkColors.of(level, level.getChunkAt(at), false).colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
 		helper.assertTrue(isColourOf(Blocks.LAPIS_BLOCK, level, at, pixel),
 			Component.literal("the top block's colour, lapis, not " + Integer.toHexString(pixel)));
 		helper.succeed();
@@ -39,12 +39,12 @@ public class MapTests {
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root, extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), Set.of(level.dimension().identifier().toString()), root, extents -> { });
 
 		drawing.loaded(level, chunk);
 		drawing.tick();
 		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
-		int seen = ChunkColors.of(level, chunk).colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
+		int seen = ChunkColors.of(level, chunk, false).colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
 		helper.assertTrue(isColourOf(Blocks.GOLD_BLOCK, level, at, seen), Component.literal("the change, gold, read from the chunk, not " + Integer.toHexString(seen)));
 		drawing.changed(level, chunk.getPos());
 		drawing.tick();
@@ -133,7 +133,7 @@ public class MapTests {
 		ServerLevel level = helper.getLevel();
 		BlockPos at = helper.absolutePos(HIGH_UP);
 		level.getChunkSource().save(true);
-		ChunkColors.Drawn saved = Backfill.drawSaved(level, net.minecraft.world.level.ChunkPos.containing(at), null);
+		ChunkColors.Drawn saved = Backfill.drawSaved(level, net.minecraft.world.level.ChunkPos.containing(at), null, true);
 		helper.assertTrue(saved != null, Component.literal("the saved chunk was read"));
 		int pixel = saved.colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
 		helper.assertTrue(isColourOf(Blocks.EMERALD_BLOCK, level, at, pixel),
@@ -167,7 +167,7 @@ public class MapTests {
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(id), root, extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(id), Set.of(id), root, extents -> { });
 		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
 		drawing.loaded(level, chunk);
 		drawing.tick();
@@ -182,6 +182,52 @@ public class MapTests {
 		int pixel = image.getRGB(Math.floorMod(at.getX(), 512), Math.floorMod(at.getZ(), 512));
 		helper.assertTrue(pixel >>> 24 == 0, Component.literal("the hidden chunk is blank, as if never seen, not " + Integer.toHexString(pixel)));
 		helper.succeed();
+	}
+
+	@GameTest(skyAccess = true)
+	public void theCaveViewShowsACavesFloorButNotAHouses(GameTestHelper helper) throws Exception {
+		// A cave: five solid blocks over a two-high opening, floored with gold
+		for (int y = 5; y <= 9; y++) helper.setBlock(new BlockPos(3, y, 3), Blocks.STONE);
+		helper.setBlock(new BlockPos(3, 4, 3), Blocks.AIR);
+		helper.setBlock(new BlockPos(3, 3, 3), Blocks.AIR);
+		helper.setBlock(new BlockPos(3, 2, 3), Blocks.GOLD_BLOCK);
+		// A house: a one-block roof over a room floored with diamond
+		helper.setBlock(new BlockPos(5, 9, 5), Blocks.STONE);
+		for (int y = 4; y <= 8; y++) helper.setBlock(new BlockPos(5, y, 5), Blocks.AIR);
+		helper.setBlock(new BlockPos(5, 3, 5), Blocks.DIAMOND_BLOCK);
+		ServerLevel level = helper.getLevel();
+		BlockPos cave = helper.absolutePos(new BlockPos(3, 2, 3)), house = helper.absolutePos(new BlockPos(5, 3, 5));
+		int caveColour = ChunkColors.of(level, level.getChunkAt(cave), true).caves()[(cave.getZ() & 15) * 16 + (cave.getX() & 15)];
+		int houseColour = ChunkColors.of(level, level.getChunkAt(house), true).caves()[(house.getZ() & 15) * 16 + (house.getX() & 15)];
+		int gold = Blocks.GOLD_BLOCK.defaultBlockState().getMapColor(level, cave).calculateARGBColor(MapColor.Brightness.NORMAL);
+		int diamond = Blocks.DIAMOND_BLOCK.defaultBlockState().getMapColor(level, house).calculateARGBColor(MapColor.Brightness.NORMAL);
+		helper.assertTrue(sameHue(caveColour, gold), Component.literal("the cave's gold floor, dimmed, not " + Integer.toHexString(caveColour)));
+		helper.assertFalse(sameHue(houseColour, diamond), Component.literal("a house is not a cave, so its diamond floor is not shown"));
+
+		// Drawn live, the caves are read off the server thread from a copy, and reach their own tiles
+		Path root = Files.createTempDirectory("web-map-test");
+		Output output = new Output(root);
+		String id = level.dimension().identifier().toString();
+		Drawing drawing = new Drawing(output, Set.of(id), Set.of(id), root, extents -> { });
+		drawing.loaded(level, level.getChunkAt(cave));
+		drawing.tick();
+		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
+		output.close(30);
+		Path caveTile = root.resolve("tiles").resolve(Dimensions.folder(level.dimension()) + ".caves").resolve("4")
+			.resolve(Math.floorDiv(cave.getX(), 512) + "_" + Math.floorDiv(cave.getZ(), 512) + ".png");
+		helper.assertTrue(Files.exists(caveTile), Component.literal("the cave tile was written"));
+		int tiled = ImageIO.read(caveTile.toFile()).getRGB(Math.floorMod(cave.getX(), 512), Math.floorMod(cave.getZ(), 512));
+		helper.assertTrue(sameHue(tiled, gold), Component.literal("the cave tile shows the gold floor, not " + Integer.toHexString(tiled)));
+		helper.succeed();
+	}
+
+	/** Whether one colour is the other dimmed: their channels in the same proportions, near enough. */
+	private static boolean sameHue(int seen, int full) {
+		int r = (seen >> 16) & 0xFF, g = (seen >> 8) & 0xFF, b = seen & 0xFF;
+		int fr = (full >> 16) & 0xFF, fg = (full >> 8) & 0xFF, fb = full & 0xFF;
+		if (r == 0 && g == 0 && b == 0) return false;
+		double scale = (double) (r + g + b) / (fr + fg + fb);
+		return scale > 0.3 && scale <= 1.01 && Math.abs(r - fr * scale) < 6 && Math.abs(g - fg * scale) < 6 && Math.abs(b - fb * scale) < 6;
 	}
 
 	@GameTest
@@ -234,7 +280,7 @@ public class MapTests {
 			Component.literal("a sign without [map] first is not a marker"));
 
 		level.getChunkSource().save(true);
-		ChunkColors.Drawn saved = Backfill.drawSaved(level, net.minecraft.world.level.ChunkPos.containing(at), null);
+		ChunkColors.Drawn saved = Backfill.drawSaved(level, net.minecraft.world.level.ChunkPos.containing(at), null, true);
 		var fromSave = saved == null ? java.util.List.<Signs.Sign>of() : saved.signs().stream().filter(s -> s.x() == at.getX() && s.z() == at.getZ()).toList();
 		helper.assertTrue(fromSave.size() == 1 && fromSave.get(0).text().equals("Ben's mine"),
 			Component.literal("the saved chunk's map sign, read from its block entity's NBT, not " + fromSave));
@@ -253,7 +299,7 @@ public class MapTests {
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root, extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), Set.of(level.dimension().identifier().toString()), root, extents -> { });
 
 		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
 		drawing.loaded(level, chunk);
@@ -261,7 +307,7 @@ public class MapTests {
 		int[] stale = new int[256];
 		java.util.Arrays.fill(stale, 0xFFFF0000);
 		drawing.paintSaved(level, Dimensions.folder(level.dimension()), chunk.getPos().x(), chunk.getPos().z(),
-			new ChunkColors.Drawn(stale, ChunkColors.Info.empty(), new int[16], java.util.List.of()));
+			new ChunkColors.Drawn(stale, ChunkColors.Info.empty(), new int[16], java.util.List.of(), null));
 		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
 		output.close(30);
 
@@ -279,9 +325,9 @@ public class MapTests {
 		// A file where the tiles folder goes: nothing can be written under it, as on a full disk
 		Files.writeString(root.resolve("tiles"), "");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root, extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), Set.of(level.dimension().identifier().toString()), root, extents -> { });
 		drawing.paintSaved(level, Dimensions.folder(level.dimension()), 1000000, 1000000,
-			new ChunkColors.Drawn(new int[256], ChunkColors.Info.empty(), new int[16], java.util.List.of()));
+			new ChunkColors.Drawn(new int[256], ChunkColors.Info.empty(), new int[16], java.util.List.of(), null));
 
 		boolean failed = false;
 		try {

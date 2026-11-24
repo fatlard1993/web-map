@@ -11,9 +11,9 @@ const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attribut
 map.setView([0, 0], NATIVE);
 
 const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
-	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', grid: 'Grid' };
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', caves: 'Caves', grid: 'Grid' };
 const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
-const SHOWN_BY_DEFAULT = { grid: false };
+const SHOWN_BY_DEFAULT = { grid: false, caves: false };
 const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'signs', 'deaths'];
 const touch = matchMedia('(hover: none)').matches;
 // A pinch anywhere zooms the map, never the page: Safari on iOS ignores touch-action for pinches, so
@@ -85,17 +85,43 @@ function tilesFor(folder) {
 	return layer;
 }
 
+// The cave view is a second set of tiles per dimension, <folder>.caves, laid over the surface's.
+const caveLayers = {};
+function cavesFor(folder) {
+	const caves = folder + '.caves';
+	caveLayers[caves] = L.tileLayer(tileUrl(caves), {
+		tileSize: 512, minZoom: FARTHEST, maxZoom: MOST, minNativeZoom: 0, maxNativeZoom: NATIVE, noWrap: true, className: 'pixelated', zIndex: 2
+	});
+	return caveLayers[caves];
+}
+
+const Caves = L.Layer.extend({
+	onAdd() { this.swap(); },
+	onRemove() {
+		if (this.current) map.removeLayer(this.current);
+		this.current = null;
+		if (layers.daylight) layers.daylight.show();
+	},
+	// Follows the dimension shown; one without caves drawn shows its surface
+	swap() {
+		if (this.current) map.removeLayer(this.current);
+		this.current = caveLayers[dimension + '.caves'] || null;
+		if (this.current) this.current.addTo(map);
+		if (layers.daylight) layers.daylight.show();
+	}
+});
+
 // Tiles are cached like any image, so the page asks again only when the server says it drew something.
 async function refreshTiles() {
 	const version = await json('version.json').catch(() => null);
 	if (!version || !version.tiles || version.tiles === tilesStamp) return;
 	tilesStamp = version.tiles;
 	extents = version.extents || {};
-	for (const folder in tileLayers) {
+	for (const [folder, layer] of [...Object.entries(tileLayers), ...Object.entries(caveLayers)]) {
 		// Below its floor a dimension has no tiles of its own, so the floor's are shrunk instead
 		const floor = extents[folder] ? extents[folder].floor : 0;
-		tileLayers[folder].options.minNativeZoom = floor;
-		tileLayers[folder].setUrl(tileUrl(folder));
+		layer.options.minNativeZoom = floor;
+		layer.setUrl(tileUrl(folder));
 	}
 	fitZoomOut();
 }
@@ -147,6 +173,7 @@ map.on('baselayerchange', e => {
 	fitZoomOut();
 	refreshMarkers();
 	refreshPlayers();
+	if (layers.caves && map.hasLayer(layers.caves)) layers.caves.swap();
 	if (layers.daylight) layers.daylight.show();
 	showBorder();
 });
@@ -920,7 +947,8 @@ const Daylight = L.Layer.extend({
 	show() {
 		if (!this.shade) return;
 		const time = lastWorld.time;
-		const shown = time !== undefined && dimension === 'minecraft_overworld';
+		// Caves have no daylight to lose
+		const shown = time !== undefined && dimension === 'minecraft_overworld' && !(layers.caves && map.hasLayer(layers.caves));
 		this.shade.style.opacity = shown ? darkness(time) : 0;
 		clock.hidden = time === undefined;
 		if (time !== undefined) clock.textContent = (darkness(time) > NIGHT / 2 ? 'Night, ' : 'Day, ') + hoursOf(time);
@@ -967,6 +995,11 @@ function start(meta) {
 	for (const key of (meta && meta.layers) || []) {
 		if (key === 'daylight') offer(key, new Daylight());
 		else if (TITLES[key]) offer(key);
+	}
+	const caveFolders = ((meta && meta.caves) || []).filter(folder => tileLayers[folder]);
+	if (caveFolders.length) {
+		for (const folder of caveFolders) cavesFor(folder);
+		offer('caves', new Caves());
 	}
 	if (layers.border || layers.daylight) {
 		refreshWorld();
