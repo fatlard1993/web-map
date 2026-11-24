@@ -1,7 +1,6 @@
 package justfatlard.web_map;
 
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.SharedConstants;
@@ -59,6 +58,11 @@ import java.util.stream.Stream;
 final class Backfill {
 	private static final Pattern REGION = Pattern.compile("r\\.(-?\\d+)\\.(-?\\d+)\\.mca");
 	private static final Gson GSON = new Gson();
+	/**
+	 * What a drawing of the saved world holds, counted up when that grows: 2 added each column's info,
+	 * the map signs and the caves. Regions drawn for an older count are drawn again, once.
+	 */
+	private static final int DRAWS = 2;
 	/** A pause after each chunk, so a full world takes longer rather than taking the machine. */
 	private static final long PAUSE_MILLIS = 1;
 
@@ -256,12 +260,28 @@ final class Backfill {
 		return present;
 	}
 
+	/** Which regions are drawn, as {"draws": DRAWS, "done": {dimension: ["x,z", ...]}}. */
+	private record Progress(int draws, Map<String, Set<String>> done) {}
+
 	private Map<String, Set<String>> readProgress() {
 		try {
 			if (Files.exists(progressFile)) {
-				Map<String, Set<String>> read = GSON.fromJson(Files.readString(progressFile, StandardCharsets.UTF_8),
-					new TypeToken<Map<String, Set<String>>>() {}.getType());
-				if (read != null) return new HashMap<>(read);
+				var tree = com.google.gson.JsonParser.parseString(Files.readString(progressFile, StandardCharsets.UTF_8));
+				// A file from before the count, or for an older one, holds drawings that lack what was added since
+				if (!tree.isJsonObject() || !tree.getAsJsonObject().has("draws")) {
+					Output.LOGGER.info("The saved world was drawn by an older version; drawing it again for what this one adds");
+					return new HashMap<>();
+				}
+				Progress read = GSON.fromJson(tree, Progress.class);
+				if (read.draws() < DRAWS) {
+					Output.LOGGER.info("The saved world was drawn by an older version; drawing it again for what this one adds");
+					return new HashMap<>();
+				}
+				if (read.done() != null) {
+					Map<String, Set<String>> done = new HashMap<>();
+					read.done().forEach((dimension, regions) -> done.put(dimension, new HashSet<>(regions)));
+					return done;
+				}
 			}
 		} catch (Exception e) {
 			Output.LOGGER.warn("Could not read which saved regions are drawn; drawing them all", e);
@@ -273,7 +293,7 @@ final class Backfill {
 		try {
 			Files.createDirectories(progressFile.getParent());
 			Path temporary = progressFile.resolveSibling(progressFile.getFileName() + ".tmp");
-			Files.writeString(temporary, GSON.toJson(done), StandardCharsets.UTF_8);
+			Files.writeString(temporary, GSON.toJson(new Progress(DRAWS, done)), StandardCharsets.UTF_8);
 			Files.move(temporary, progressFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 		} catch (Exception e) {
 			Output.LOGGER.warn("Could not keep which saved regions are drawn", e);
