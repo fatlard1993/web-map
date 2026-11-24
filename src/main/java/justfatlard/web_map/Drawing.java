@@ -33,7 +33,7 @@ final class Drawing {
 	private final Output output;
 	private final TileStore tiles;
 	private final InfoStore info;
-	private final Signs signs;
+	private final Marks marks;
 	private volatile HiddenAreas hidden = HiddenAreas.NONE;
 	private final Set<String> dimensions;
 	private final Set<String> caveDimensions;
@@ -56,7 +56,7 @@ final class Drawing {
 		this.output = output;
 		this.tiles = new TileStore(output.root.resolve("tiles"));
 		this.info = new InfoStore(output.root.resolve("info"), kept.resolve("info-palette.json"));
-		this.signs = new Signs(kept.resolve("signs.json"));
+		this.marks = new Marks(kept.resolve("marks.json"));
 		this.dimensions = dimensions;
 		this.whenWritten = whenWritten;
 		output.later("read the map tiles", () -> {
@@ -118,7 +118,7 @@ final class Drawing {
 	void flush() {
 		output.later("write map tiles", () -> {
 			info.flush();
-			signs.flush();
+			marks.flush();
 			if (tiles.flush()) whenWritten.accept(tiles.extentsJson());
 		});
 	}
@@ -144,7 +144,7 @@ final class Drawing {
 	java.util.concurrent.CompletableFuture<Boolean> flushNow() {
 		return output.submit(() -> {
 			info.flush();
-			signs.flush();
+			marks.flush();
 			boolean wrote = tiles.flush();
 			if (wrote) whenWritten.accept(tiles.extentsJson());
 			return wrote;
@@ -179,7 +179,7 @@ final class Drawing {
 		ChunkColors.Drawn drawn = ChunkColors.of(level, chunk, false);
 		ChunkColors.Info about = drawn.info();
 		int hash = Objects.hash(Arrays.hashCode(drawn.colors()), Arrays.hashCode(about.tops()), Arrays.hashCode(about.grounds()),
-			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()), drawn.signs());
+			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()), drawn.marks());
 		Long2IntMap colours = drawnColours.computeIfAbsent(level, l -> new Long2IntOpenHashMap());
 		if (colours.containsKey(pos) && colours.get(pos) == hash) return;
 		colours.put(pos, hash);
@@ -206,11 +206,11 @@ final class Drawing {
 		tiles.paint(dimension, x, z, drawn.colors());
 		if (drawn.caves() != null) tiles.paint(cavesOf(dimension), x, z, drawn.caves());
 		info.paint(dimension, x, z, drawn.info());
-		signs.drawn(dimension, x, z, drawn.signs());
+		marks.drawn(dimension, x, z, drawn.marks());
 	}
 
-	Signs signs() {
-		return signs;
+	Marks marks() {
+		return marks;
 	}
 
 	/** On the writer thread: a chunk as if never seen, wherever something of it was drawn. */
@@ -218,7 +218,7 @@ final class Drawing {
 		tiles.erase(dimension, x, z);
 		tiles.erase(cavesOf(dimension), x, z);
 		info.erase(dimension, x, z);
-		signs.drawn(dimension, x, z, java.util.List.of());
+		marks.drawn(dimension, x, z, java.util.List.of());
 	}
 
 	HiddenAreas hidden() {

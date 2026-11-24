@@ -77,6 +77,10 @@ html, body { touch-action: none; overscroll-behavior: none; }
 .photo { --dot: #f2f2f2; cursor: pointer; }
 .sign { --dot: #d9a85b; }
 .sign::before { border-radius: 1px; width: 10px; height: 7px; }
+.beacon { --dot: #7ff3ff; }
+.beacon::before { border-radius: 1px; transform: rotate(45deg); box-shadow: 0 0 0 2px #000, 0 0 6px 2px rgba(127, 243, 255, 0.7); }
+.beacon.away { opacity: 0.6; }
+.beacon.away::before { box-shadow: 0 0 0 2px #000; }
 .death { --dot: #c9c9c9; cursor: pointer; }
 .death::before { border-radius: 4px 4px 1px 1px; width: 7px; height: 9px; }
 .photo::before { border-radius: 2px; width: 10px; height: 8px; box-shadow: 0 0 0 2px #000, inset 0 0 0 2px #555; }

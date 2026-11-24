@@ -60,7 +60,7 @@ final class Backfill {
 	private static final Gson GSON = new Gson();
 	/**
 	 * What a drawing of the saved world holds, counted up when that grows: 2 added each column's info,
-	 * the map signs and the caves. Regions drawn for an older count are drawn again, once.
+	 * the signs, the beacons and the caves. Regions drawn for an older count are drawn again, once.
 	 */
 	private static final int DRAWS = 2;
 	/** A pause after each chunk, so a full world takes longer rather than taking the machine. */
@@ -192,7 +192,7 @@ final class Backfill {
 		int minY = level.getMinY();
 		ChunkColors.Blocks blocks = saved(data, level, minY, Mth.ceillog2(level.getHeight() + 1));
 		return ChunkColors.draw(blocks, EmptyBlockGetter.INSTANCE, ChunkColors.sliceOf(level), minY, pos.getMinBlockX(), pos.getMinBlockZ(), northEdge)
-			.withSigns(Signs.saved(Dimensions.folder(level.dimension()), data.blockEntities(), level.registryAccess()))
+			.withMarks(Marks.saved(Dimensions.folder(level.dimension()), data.blockEntities(), level.registryAccess()))
 			.withCaves(caves ? ChunkColors.caves(blocks, EmptyBlockGetter.INSTANCE, minY, pos.getMinBlockX(), pos.getMinBlockZ()) : null);
 	}
 

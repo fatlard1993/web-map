@@ -132,7 +132,7 @@ public class Main implements DedicatedServerModInitializer {
 		drawing = new Drawing(output, config.drawnDimensions(), config.caveDimensions(),
 			server.getWorldPath(LevelResource.ROOT).resolve("web-map"),
 			extents -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + ",\"extents\":" + extents + "}"));
-		layers = new Layers(output, config, server, drawing.signs(), drawing::hidden);
+		layers = new Layers(output, config, server, drawing.marks(), drawing::hidden);
 		seed = server.getWorldGenSettings().options().seed();
 		drawing.hide(new HiddenAreas(config.hiddenAreas, seed));
 		ticks = 0;

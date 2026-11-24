@@ -55,7 +55,7 @@ final class Layers {
 	private final Homes homes = new Homes();
 	private final ShipLog ships;
 	private final DeathLog deaths;
-	private final Signs signs;
+	private final Marks marks;
 	private final Faces faces;
 	private final Supplier<HiddenAreas> hidden;
 	private final Sightings<List<Spot>> sightings = new Sightings<>();
@@ -66,10 +66,10 @@ final class Layers {
 	private volatile JsonArray photos = new JsonArray();
 
 	/** @param hidden the areas the map never shows, as they are now */
-	Layers(Output output, WebMapConfig config, MinecraftServer server, Signs signs, Supplier<HiddenAreas> hidden) {
+	Layers(Output output, WebMapConfig config, MinecraftServer server, Marks marks, Supplier<HiddenAreas> hidden) {
 		this.output = output;
 		this.hidden = hidden;
-		this.signs = signs;
+		this.marks = marks;
 		this.faces = new Faces(output.root.resolve("heads"));
 		this.config = config;
 		config.dimensions.forEach(id -> drawnFolders.add(Dimensions.folder(id)));
@@ -269,16 +269,26 @@ final class Layers {
 			if (config.ships && !broken.contains("ships")) markers.add("ships", shipMarkers());
 		}
 		if (config.photos && PHOTOGRAPHY) markers.add("photos", photos);
-		if (config.signs) {
-			JsonArray list = new JsonArray();
-			for (Signs.Sign sign : signs.all()) {
-				if (!shown(sign.dimension(), sign.x(), sign.z())) continue;
-				JsonObject entry = spot(sign.dimension(), sign.x(), sign.z());
-				entry.addProperty("y", sign.y());
-				entry.addProperty("text", sign.text());
-				list.add(entry);
+		if (config.signs || config.beacons) {
+			JsonArray signList = new JsonArray(), beaconList = new JsonArray();
+			for (Marks.Mark mark : marks.all()) {
+				if (!shown(mark.dimension(), mark.x(), mark.z())) continue;
+				JsonObject entry = spot(mark.dimension(), mark.x(), mark.z());
+				entry.addProperty("y", mark.y());
+				if (Marks.SIGN.equals(mark.kind())) {
+					entry.addProperty("text", mark.name());
+					signList.add(entry);
+				} else {
+					if (mark.name() != null) entry.addProperty("name", mark.name());
+					JsonArray effects = new JsonArray();
+					mark.effects().forEach(effects::add);
+					entry.add("effects", effects);
+					entry.addProperty("levels", mark.levels());
+					beaconList.add(entry);
+				}
 			}
-			markers.add("signs", list);
+			if (config.signs) markers.add("signs", signList);
+			if (config.beacons) markers.add("beacons", beaconList);
 		}
 		if (config.deaths) {
 			JsonArray list = new JsonArray();

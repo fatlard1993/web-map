@@ -61,16 +61,16 @@ final class ChunkColors {
 
 	/**
 	 * A chunk's colours and what is in it, the heights along its south edge, which the chunk south of
-	 * it is shaded against, and the map signs in it.
+	 * it is shaded against, and the signs and beacons in it.
 	 */
-	record Drawn(int[] colors, Info info, int[] southEdge, List<Signs.Sign> signs, int[] caves) {
-		Drawn withSigns(List<Signs.Sign> found) {
+	record Drawn(int[] colors, Info info, int[] southEdge, List<Marks.Mark> marks, int[] caves) {
+		Drawn withMarks(List<Marks.Mark> found) {
 			return new Drawn(colors, info, southEdge, found, caves);
 		}
 
 		/** @param drawn the cave view's colours, or null where caves are not drawn */
 		Drawn withCaves(int[] drawn) {
-			return new Drawn(colors, info, southEdge, signs, drawn);
+			return new Drawn(colors, info, southEdge, marks, drawn);
 		}
 	}
 
@@ -89,7 +89,7 @@ final class ChunkColors {
 		int[] northEdge = north == null ? null : edge(loaded(north), level, slice, level.getMinY(), baseX, baseZ - 1);
 		Blocks blocks = loaded(chunk);
 		return draw(blocks, level, slice, level.getMinY(), baseX, baseZ, northEdge)
-			.withSigns(Signs.of(Dimensions.folder(level.dimension()), chunk))
+			.withMarks(Marks.of(Dimensions.folder(level.dimension()), chunk))
 			.withCaves(caves ? caves(blocks, level, level.getMinY(), baseX, baseZ) : null);
 	}
 

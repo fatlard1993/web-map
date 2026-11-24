@@ -26,6 +26,7 @@ The page can show, over the map:
 - **Ships**, when Big Boats is installed: where each ship is while somebody is near it, and where it was last seen while nobody is; a ship broken up is let go, and one unseen for 30 days is forgotten
 - **Photos**, when Redstone Photography is installed: a pin where each photo was taken, which opens the photo, and tapping it fills the window; photos taken from the same block, as a camera block's are, share one pin and step through newest first; photos taken before this was installed have no recorded place and are not pinned
 - **Signs**: a sign whose first line is `[map]` is a marker, named by its other lines
+- **Beacons**, every beacon with its name and effects, and the box its effects reach while it is lit
 - **Deaths**, each player's last three, for 30 days, with the death message and height
 - **World border**
 - **Day and night**: the overworld darkens at night, with the time of day beside the coordinates
@@ -34,7 +35,7 @@ The page can show, over the map:
 
 Each viewer shows or hides layers in the box at the top right (tap it on a phone), and the page remembers their choice in their browser.
 
-Clicking the map says where that spot is, its biome, what it is made of and how high it is, with buttons to copy its coordinates, a `/tp` command or a link to it, and the matching spot in the Nether or overworld. The address bar always holds the dimension and view, so a link sent to someone opens on the same spot. The search box finds players, homes, villages, portals, ships, signs and deaths by name in any dimension, or goes to typed coordinates; the ruler measures a distance along points clicked in turn, with how long it takes to walk and sprint. Clicking a portal shows its other end.
+Clicking the map says where that spot is, its biome, what it is made of and how high it is, with buttons to copy its coordinates, a `/tp` command or a link to it, and the matching spot in the Nether or overworld. The address bar always holds the dimension and view, so a link sent to someone opens on the same spot. The search box finds players, homes, villages, portals, ships, signs, beacons and deaths by name in any dimension, or goes to typed coordinates; the ruler measures a distance along points clicked in turn, with how long it takes to walk and sprint. Clicking a portal shows its other end.
 
 Labels that would overlap gather into one list at the first of them, the rest keeping their dots; clicking a name in it does what clicking that label would, and clicking elsewhere in it zooms in until they spread apart. The map zooms out as far as it takes to see everything drawn, and the button under the zoom buttons shows all of it at once.
 
@@ -45,7 +46,7 @@ Labels that would overlap gather into one list at the first of them, the rest ke
 - `dimensions`: the dimensions drawn, by id; default the overworld, the Nether and the End. Anything not listed is never written: no tiles, players, homes, ships, photos or portal ends in it. Tiles already drawn for a dimension you take off the list stay in `web-map/tiles/` until you delete its folder.
 - `players`, `homes`, `villages`, `spawn`, `portals`, `ships`, `photos`: each layer on or off, all on by default. A layer switched off is never written, so no viewer can see it.
 - `caves`: the dimensions whose caves are drawn too, by id; default the overworld.
-- `signs`, `deaths`, `border`, `daylight`: these layers on or off, all on by default.
+- `signs`, `beacons`, `deaths`, `border`, `daylight`: these layers on or off, all on by default.
 - `hideSneaking`, `hideUnderground`: leave players off the map while they sneak, or while they are more than 8 blocks under the surface (never in the Nether, whose roof would hide everyone); both on by default.
 - `playerDelaySeconds`: how late players' positions are shown, so the map cannot be used to chase anyone; 30 by default, 0 for none.
 - `hiddenAreas`: areas never drawn and with no markers, kept by the commands below.
@@ -68,7 +69,7 @@ Everything the page needs goes in `web-map/` in the server's folder, and nothing
 - `meta.json`, what the server offers; `players.json` and `markers.json`, the layers; `world.json`, the time of day and world borders; `version.json`, when tiles last changed and how far each dimension's reach
 - `photos/`, copies of the pinned photos
 
-Where ships were last seen and players died, the map signs, the info palette, and which saved regions are drawn are kept in the world folder, in `web-map/`, not in the served folder.
+Where ships were last seen and players died, the map signs and beacons, the info palette, and which saved regions are drawn are kept in the world folder, in `web-map/`, not in the served folder.
 
 ## Serving it
 

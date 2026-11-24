@@ -273,17 +273,46 @@ public class MapTests {
 		BlockPos at = helper.absolutePos(signAt);
 		String dimension = Dimensions.folder(level.dimension());
 
-		var live = Signs.of(dimension, level.getChunkAt(at)).stream().filter(s -> s.x() == at.getX() && s.z() == at.getZ()).toList();
-		helper.assertTrue(live.size() == 1 && live.get(0).text().equals("Ben's mine") && live.get(0).y() == at.getY(),
+		var live = Marks.of(dimension, level.getChunkAt(at)).stream().filter(s -> s.x() == at.getX() && s.z() == at.getZ()).toList();
+		helper.assertTrue(live.size() == 1 && live.get(0).name().equals("Ben's mine") && live.get(0).y() == at.getY(),
 			Component.literal("the live chunk's map sign, named by its other lines, not " + live));
-		helper.assertTrue(Signs.of(dimension, level.getChunkAt(helper.absolutePos(plainAt))).stream().noneMatch(s -> s.x() == helper.absolutePos(plainAt).getX()),
+		helper.assertTrue(Marks.of(dimension, level.getChunkAt(helper.absolutePos(plainAt))).stream().noneMatch(s -> s.x() == helper.absolutePos(plainAt).getX()),
 			Component.literal("a sign without [map] first is not a marker"));
 
 		level.getChunkSource().save(true);
 		ChunkColors.Drawn saved = Backfill.drawSaved(level, net.minecraft.world.level.ChunkPos.containing(at), null, true);
-		var fromSave = saved == null ? java.util.List.<Signs.Sign>of() : saved.signs().stream().filter(s -> s.x() == at.getX() && s.z() == at.getZ()).toList();
-		helper.assertTrue(fromSave.size() == 1 && fromSave.get(0).text().equals("Ben's mine"),
+		var fromSave = saved == null ? java.util.List.<Marks.Mark>of() : saved.marks().stream().filter(s -> s.x() == at.getX() && s.z() == at.getZ()).toList();
+		helper.assertTrue(fromSave.size() == 1 && fromSave.get(0).name().equals("Ben's mine"),
 			Component.literal("the saved chunk's map sign, read from its block entity's NBT, not " + fromSave));
+		helper.succeed();
+	}
+
+	@GameTest(skyAccess = true)
+	public void beaconsAreMarkersWithTheirNameEffectsAndLevels(GameTestHelper helper) {
+		BlockPos beaconAt = new BlockPos(2, 2, 2);
+		helper.setBlock(beaconAt, Blocks.BEACON);
+		ServerLevel level = helper.getLevel();
+		BlockPos at = helper.absolutePos(beaconAt);
+		String dimension = Dimensions.folder(level.dimension());
+		var live = Marks.of(dimension, level.getChunkAt(at)).stream().filter(m -> m.x() == at.getX() && m.z() == at.getZ()).toList();
+		helper.assertTrue(live.size() == 1 && live.get(0).kind().equals(Marks.BEACON) && live.get(0).levels() == 0 && live.get(0).name() == null,
+			Component.literal("a beacon placed is a mark, unlit and unnamed, not " + live));
+
+		var tag = new net.minecraft.nbt.CompoundTag();
+		tag.putString("id", "minecraft:beacon");
+		tag.putInt("x", 10);
+		tag.putInt("y", 70);
+		tag.putInt("z", -20);
+		tag.putString("primary_effect", "minecraft:speed");
+		tag.putString("secondary_effect", "minecraft:regeneration");
+		tag.putInt("Levels", 4);
+		tag.putString("CustomName", "Spawn light");
+		var saved = Marks.saved(dimension, java.util.List.of(tag), level.registryAccess());
+		helper.assertTrue(saved.size() == 1, Component.literal("the saved beacon is a mark"));
+		Marks.Mark beacon = saved.get(0);
+		helper.assertTrue(beacon.levels() == 4 && beacon.effects().equals(java.util.List.of("minecraft:speed", "minecraft:regeneration"))
+				&& "Spawn light".equals(beacon.name()) && beacon.x() == 10 && beacon.z() == -20,
+			Component.literal("the saved beacon's name, effects, levels and place, not " + beacon));
 		helper.succeed();
 	}
 

@@ -11,10 +11,10 @@ const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attribut
 map.setView([0, 0], NATIVE);
 
 const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
-	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', caves: 'Caves', grid: 'Grid' };
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', beacons: 'Beacons', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', caves: 'Caves', grid: 'Grid' };
 const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
 const SHOWN_BY_DEFAULT = { grid: false, caves: false };
-const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'signs', 'deaths'];
+const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'signs', 'beacons', 'deaths'];
 const touch = matchMedia('(hover: none)').matches;
 // A pinch anywhere zooms the map, never the page: Safari on iOS ignores touch-action for pinches, so
 // its own gesture events are refused as well.
@@ -240,7 +240,7 @@ const Grid = L.GridLayer.extend({
 // many more, unless the map is in as far as it goes. Its lines act as their labels would, and any
 // other line zooms in on the stack, which spreads it apart.
 const labelled = new Set();
-const RANK = ['spawn', 'player', 'village', 'sign', 'portal', 'ship', 'home', 'death', 'photo'];
+const RANK = ['spawn', 'player', 'village', 'sign', 'beacon', 'portal', 'ship', 'home', 'death', 'photo'];
 const LINE = 17;
 const STACK_SHOWS = 5;
 const measure = document.createElement('canvas').getContext('2d');
@@ -527,6 +527,18 @@ async function refreshMarkers() {
 	if (layers.signs) {
 		for (const sign of here(markers.signs)) named(L.marker(at(sign.x, sign.z), { icon: dot('sign') }), sign.text).addTo(layers.signs);
 	}
+	if (layers.beacons) {
+		for (const beacon of here(markers.beacons)) {
+			const lit = beacon.levels > 0;
+			if (lit) {
+				// A beacon reaches 10 blocks for each level of its pyramid, and 10 more, as a box around it
+				const reach = beacon.levels * 10 + 10;
+				L.rectangle([[beacon.z - reach, beacon.x - reach], [beacon.z + reach + 1, beacon.x + reach + 1]],
+					{ color: '#7ff3ff', weight: 1, opacity: 0.5, fillOpacity: 0.04, interactive: false }).addTo(layers.beacons);
+			}
+			named(L.marker(at(beacon.x, beacon.z), { icon: dot(lit ? 'beacon' : 'beacon away') }), beaconLabel(beacon)).addTo(layers.beacons);
+		}
+	}
 	if (layers.deaths) {
 		for (const death of here(markers.deaths)) {
 			const marker = named(L.marker(at(death.x, death.z), { icon: dot('death') }), death.name + ' died, ' + ago(death.time));
@@ -561,6 +573,12 @@ const ago = time => {
 	const minutes = Math.max(0, Math.round((Date.now() - time) / 60000));
 	return minutes < 60 ? minutes + ' min ago' : minutes < 2880 ? Math.round(minutes / 60) + ' h ago' : Math.round(minutes / 1440) + ' days ago';
 };
+
+function beaconLabel(beacon) {
+	const effects = beacon.effects || [];
+	const powers = effects.length === 2 && effects[0] === effects[1] ? prettyName(effects[0]) + ' II' : effects.map(prettyName).join(', ');
+	return (beacon.name || 'Beacon') + (beacon.levels > 0 ? (powers ? ': ' + powers : '') : ' (unlit)');
+}
 
 function deathView(death) {
 	const view = document.createElement('div');
@@ -808,6 +826,7 @@ function searchables() {
 	for (const link of lastMarkers.portals || []) for (const end of [link.from, link.to]) add('portal', link.name || 'Portal', end);
 	for (const ship of lastMarkers.ships || []) add('ship', ship.name || 'A ship', ship);
 	for (const sign of lastMarkers.signs || []) add('sign', sign.text, sign);
+	for (const beacon of lastMarkers.beacons || []) add('beacon', beaconLabel(beacon), beacon);
 	for (const death of lastMarkers.deaths || []) add('death', death.name + ' died', death);
 	return found;
 }
