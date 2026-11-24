@@ -48,6 +48,7 @@ final class Layers {
 	private static final boolean PHOTOGRAPHY = FabricLoader.getInstance().isModLoaded("redstone-photography");
 	private static final boolean PANDORICAL = FabricLoader.getInstance().isModLoaded("pandorical");
 	private static final boolean OFFLINE_SKINS = FabricLoader.getInstance().isModLoaded("offline-skins-justfatlard");
+	private static final boolean TP_ME_PLZ = FabricLoader.getInstance().isModLoaded("tp-me-plz");
 
 	private final Output output;
 	private final WebMapConfig config;
@@ -302,6 +303,23 @@ final class Layers {
 			if (config.signs) markers.add("signs", signList);
 			if (config.beacons) markers.add("beacons", beaconList);
 		}
+		if (config.places && TP_ME_PLZ) {
+			List<justfatlard.web_map.integration.SharedPlaceLayer.Place> places = guarded("places",
+				() -> justfatlard.web_map.integration.SharedPlaceLayer.places(server));
+			if (places != null) {
+				JsonArray list = new JsonArray();
+				for (var place : places) {
+					String dimension = Dimensions.folder(place.dimension());
+					if (!shown(dimension, place.x(), place.z())) continue;
+					JsonObject entry = spot(dimension, place.x(), place.z());
+					entry.addProperty("name", place.name());
+					entry.addProperty("owner", place.owner());
+					entry.addProperty("icon", place.icon());
+					list.add(entry);
+				}
+				markers.add("places", list);
+			}
+		}
 		if (config.deaths) {
 			JsonArray list = new JsonArray();
 			for (DeathLog.Death death : deaths.all(System.currentTimeMillis())) {
@@ -436,6 +454,7 @@ final class Layers {
 			case "portals" -> PLAYER_PORTALS;
 			case "ships" -> BIG_BOATS;
 			case "photos" -> PHOTOGRAPHY;
+			case "places" -> TP_ME_PLZ;
 			default -> true;
 		};
 	}

@@ -77,6 +77,8 @@ html, body { touch-action: none; overscroll-behavior: none; }
 .photo { --dot: #f2f2f2; cursor: pointer; }
 .sign { --dot: #d9a85b; }
 .sign::before { border-radius: 1px; width: 10px; height: 7px; }
+.place { --dot: #ff9de2; }
+.place::before { border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
 .beacon { --dot: #7ff3ff; }
 .beacon::before { border-radius: 1px; transform: rotate(45deg); box-shadow: 0 0 0 2px #000, 0 0 6px 2px rgba(127, 243, 255, 0.7); }
 .beacon.away { opacity: 0.6; }

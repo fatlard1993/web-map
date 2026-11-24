@@ -16,7 +16,7 @@ dependencies {
 	// Optional integrations, compiled against the sibling checkouts' jars and never bundled: the
 	// village, portal, ship and photo layers need village-quests, player-portals, big-boats and
 	// redstone-photography, each offered only where its mod is installed, a player's choice
-	// not to be shown on maps is Pandorical's, and players' faces come from Offline Skins.
+	// not to be shown on maps is Pandorical's, players' faces come from Offline Skins, and shared places from TP Me Plz.
 	//
 	// Each sibling's path is written out whole: the nightly release finds what to clone and build
 	// first by reading these paths, and one assembled from a variable is invisible to it.
@@ -25,7 +25,8 @@ dependencies {
 	 [file("../big-boats/gradle.properties"), "big-boats-justfatlard"],
 	 [file("../redstone-photography/gradle.properties"), "redstone-photography"],
 	 [file("../pandorical/gradle.properties"), "pandorical"],
-	 [file("../offline-skins/gradle.properties"), "offline-skins-justfatlard"]].each { pair ->
+	 [file("../offline-skins/gradle.properties"), "offline-skins-justfatlard"],
+	 [file("../tp-me-plz/gradle.properties"), "tp-me-plz"]].each { pair ->
 		def properties = pair[0]
 		def mod = properties.parentFile.name
 		if (!properties.exists()) {

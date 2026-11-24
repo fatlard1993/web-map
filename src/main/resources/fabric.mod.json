@@ -34,7 +34,8 @@
     "big-boats-justfatlard": "*",
     "redstone-photography": ">=1.1.10",
     "pandorical": ">=15.37.0",
-    "offline-skins-justfatlard": "*"
+    "offline-skins-justfatlard": "*",
+    "tp-me-plz": ">=1.3.0"
   },
   "custom": {
     "modmenu": {

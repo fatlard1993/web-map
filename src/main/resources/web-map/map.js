@@ -11,10 +11,10 @@ const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attribut
 map.setView([0, 0], NATIVE);
 
 const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
-	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', beacons: 'Beacons', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', sky: 'Sky builds', caves: 'Caves', grid: 'Grid' };
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', beacons: 'Beacons', places: 'Shared places', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', sky: 'Sky builds', caves: 'Caves', grid: 'Grid' };
 const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
 const SHOWN_BY_DEFAULT = { grid: false, caves: false };
-const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'signs', 'beacons', 'deaths'];
+const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'signs', 'beacons', 'places', 'deaths'];
 const touch = matchMedia('(hover: none)').matches;
 // A pinch anywhere zooms the map, never the page: Safari on iOS ignores touch-action for pinches, so
 // its own gesture events are refused as well.
@@ -263,7 +263,7 @@ const Grid = L.GridLayer.extend({
 // many more, unless the map is in as far as it goes. Its lines act as their labels would, and any
 // other line zooms in on the stack, which spreads it apart.
 const labelled = new Set();
-const RANK = ['spawn', 'player', 'village', 'sign', 'beacon', 'portal', 'ship', 'home', 'death', 'photo'];
+const RANK = ['spawn', 'player', 'village', 'place', 'sign', 'beacon', 'portal', 'ship', 'home', 'death', 'photo'];
 const LINE = 17;
 const STACK_SHOWS = 5;
 const measure = document.createElement('canvas').getContext('2d');
@@ -554,6 +554,12 @@ async function refreshMarkers() {
 	}
 	if (layers.signs) {
 		for (const sign of here(markers.signs)) named(L.marker(at(sign.x, sign.z), { icon: dot('sign') }), sign.text).addTo(layers.signs);
+	}
+	if (layers.places) {
+		for (const place of here(markers.places)) {
+			const marker = named(L.marker(at(place.x, place.z), { icon: dot('place'), title: place.name + ', shared by ' + place.owner }), place.name);
+			marker.addTo(layers.places);
+		}
 	}
 	if (layers.beacons) {
 		for (const beacon of here(markers.beacons)) {
@@ -864,6 +870,7 @@ function searchables() {
 	for (const ship of lastMarkers.ships || []) add('ship', ship.name || 'A ship', ship);
 	for (const sign of lastMarkers.signs || []) add('sign', sign.text, sign);
 	for (const beacon of lastMarkers.beacons || []) add('beacon', beaconLabel(beacon), beacon);
+	for (const place of lastMarkers.places || []) add('place', place.name, place);
 	for (const death of lastMarkers.deaths || []) add('death', death.name + ' died', death);
 	return found;
 }
