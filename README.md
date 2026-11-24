@@ -22,12 +22,14 @@ The page can show, over the map:
 - **Homes**, the bed or respawn anchor of everyone who has played, online or not, by name; with Pandorical installed, a player who turns off "Show me on maps" on its page of their settings is left off both of these
 - **Villages**, by name and size, when Village Quests is installed
 - **Spawn**
-- **Portal links**, when Player Portals is installed: each tied pair in its own colour, a hub's spokes as dotted lines, and where the far end is when it is in another world
+- **Portal links**, when Player Portals is installed: each tied pair in its own colour, a hub's spokes as dotted lines, and where the far end is when it is in another world; clicking a portal shows its other end, switching dimension if need be
 - **Ships**, when Big Boats is installed: where each ship is while somebody is near it, and where it was last seen while nobody is; a ship broken up is let go, and one unseen for 30 days is forgotten
 - **Photos**, when Redstone Photography is installed: a pin where each photo was taken, which opens the photo, and tapping it fills the window; photos taken from the same block, as a camera block's are, share one pin and step through newest first; photos taken before this was installed have no recorded place and are not pinned
 - **Grid**, region and chunk lines with region numbers, off until a viewer turns it on
 
 Each viewer shows or hides layers in the box at the top right (tap it on a phone), and the page remembers their choice in their browser.
+
+Labels that would overlap gather into one list at the first of them, the rest keeping their dots; clicking a name in it does what clicking that label would, and clicking elsewhere in it zooms in until they spread apart. The map zooms out as far as it takes to see everything drawn, and the button under the zoom buttons shows all of it at once.
 
 ## Settings
 
@@ -44,8 +46,8 @@ If the file cannot be read, nothing is drawn and no layer is offered until it is
 Everything the page needs goes in `web-map/` in the server's folder, and nothing else does:
 
 - `index.html`, `map.js`, `map.css` and `leaflet/`, the page and the map library it runs on, put back at every start
-- `tiles/`, the map, in 512-pixel squares at five zooms
-- `meta.json`, what the server offers; `players.json` and `markers.json`, the layers; `version.json`, when tiles last changed
+- `tiles/`, the map, in 512-pixel squares, from a pixel a block out to as far as it takes for everything drawn to fit in four
+- `meta.json`, what the server offers; `players.json` and `markers.json`, the layers; `version.json`, when tiles last changed and how far each dimension's reach
 - `photos/`, copies of the pinned photos
 
 Where ships were last seen, and which saved regions are drawn, are kept in the world folder, in `web-map/`, not in the served folder.

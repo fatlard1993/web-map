@@ -3,6 +3,14 @@
     "The world as a map in a web page, top-down and shaded the way in-game maps are, kept current as it changes."
   ],
   "versions": {
+    "0.1.2": [
+      "The map zooms out as far as it takes to see the whole world, however far it has been explored, and a new button shows all of it at once.",
+      "Labels that would overlap gather into one readable list, the others keeping their dots; clicking the list zooms in until they spread apart.",
+      "Clicking a portal jumps to its other end, switching to the Nether or the End if that is where it leads.",
+      "A player who turned off Pandorical's Show me on maps is left off the players and homes layers.",
+      "A damaged chunk in the saved world is skipped instead of stopping the rest of its region from being drawn.",
+      "An older Pandorical no longer stops the server from starting; the map runs with a warning instead."
+    ],
     "0.1.1": [
       "The world as it was saved before the map was installed is drawn once from the region files, at low priority and without loading it, picking up where it stopped after a restart."
     ],
