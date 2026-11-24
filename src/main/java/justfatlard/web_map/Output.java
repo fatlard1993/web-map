@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -50,6 +52,19 @@ final class Output {
 			// Queued while the server stops, by a write still finishing: done here rather than dropped
 			run.run();
 		}
+	}
+
+	/** Runs on the writer thread and answers with its result, or the exception it threw. */
+	<T> CompletableFuture<T> submit(Callable<T> task) {
+		CompletableFuture<T> result = new CompletableFuture<>();
+		later("finish a queued write", () -> {
+			try {
+				result.complete(task.call());
+			} catch (Exception e) {
+				result.completeExceptionally(e);
+			}
+		});
+		return result;
 	}
 
 	void writeLater(String name, String content) {

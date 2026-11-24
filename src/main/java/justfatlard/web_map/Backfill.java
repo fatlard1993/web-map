@@ -104,9 +104,16 @@ final class Backfill {
 					drawRegion(level, dimension, region[0], region[1], southEdges);
 				} catch (InterruptedException interrupted) {
 					return;
+				} catch (RegionUnreadable e) {
+					// A damaged region file does not mend itself: logged, and not tried again
+					Output.LOGGER.warn("Could not read saved region {}, {} of {}; it stays blank until its chunks load", region[0], region[1], dimension, e.getCause());
 				} catch (Exception e) {
-					Output.LOGGER.warn("Could not draw saved region {}, {} of {}", region[0], region[1], dimension, e);
+					if (stopping) return;
+					// The tiles did not reach the disk, a full one say: nothing more is drawn until the next start
+					Output.LOGGER.error("Could not write the saved {}; drawing it stops until the server next starts", dimension, e);
+					return;
 				}
+				if (stopping) return;
 				// Edges more than a region row north are no longer needed by anything still to draw
 				int keepFromZ = region[1] * 32 - 1;
 				southEdges.long2ObjectEntrySet().removeIf(entry -> ChunkPos.getZ(entry.getLongKey()) < keepFromZ - 32);
@@ -122,7 +129,14 @@ final class Backfill {
 
 	private void drawRegion(ServerLevel level, String dimension, int regionX, int regionZ, Long2ObjectMap<int[]> southEdges)
 			throws Exception {
-		boolean[] present = present(regionFile(level, regionX, regionZ));
+		boolean[] present;
+		try {
+			present = present(regionFile(level, regionX, regionZ));
+		} catch (Exception e) {
+			throw new RegionUnreadable(e);
+		}
+		int failed = 0;
+		Exception first = null;
 
 		for (int z = 0; z < 32; z++) {
 			for (int x = 0; x < 32; x++) {
@@ -130,14 +144,31 @@ final class Backfill {
 				if (!present[z * 32 + x]) continue;
 				ChunkPos pos = new ChunkPos(regionX * 32 + x, regionZ * 32 + z);
 				if (drawing.drawnLive(level, pos.pack())) continue;
-				ChunkColors.Drawn colours = drawSaved(level, pos, southEdges.get(ChunkPos.pack(pos.x(), pos.z() - 1)));
+				ChunkColors.Drawn colours;
+				try {
+					colours = drawSaved(level, pos, southEdges.get(ChunkPos.pack(pos.x(), pos.z() - 1)));
+				} catch (Exception e) {
+					// One damaged chunk leaves only itself blank
+					if (stopping) return;
+					failed++;
+					if (first == null) first = e;
+					continue;
+				}
 				if (colours == null) continue;
 				southEdges.put(pos.pack(), colours.southEdge());
-				drawing.paintSaved(dimension, pos.x(), pos.z(), colours.colors());
+				drawing.paintSaved(level, dimension, pos.x(), pos.z(), colours.colors());
 				Thread.sleep(PAUSE_MILLIS);
 			}
 		}
-		drawing.flush();
+		if (failed > 0) Output.LOGGER.warn("{} saved chunks in region {}, {} of {} could not be read; they stay blank until they load", failed, regionX, regionZ, dimension, first);
+		// Waits for the tiles to be on disk before the region counts as drawn; an error here is thrown on
+		drawing.flushNow().join();
+	}
+
+	private static final class RegionUnreadable extends Exception {
+		RegionUnreadable(Exception cause) {
+			super(cause);
+		}
 	}
 
 	/** A saved chunk's colours as it was saved, or null when it was never fully generated or saved. */
@@ -204,7 +235,7 @@ final class Backfill {
 	}
 
 	/** Which of a region's 1024 chunks were ever saved, from the offsets at the head of its file. */
-	private static boolean[] present(Path file) throws Exception {
+	static boolean[] present(Path file) throws Exception {
 		boolean[] present = new boolean[1024];
 		try (InputStream in = Files.newInputStream(file); DataInputStream offsets = new DataInputStream(in)) {
 			for (int i = 0; i < 1024; i++) present[i] = offsets.readInt() != 0;

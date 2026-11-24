@@ -76,6 +76,57 @@ public class MapTests {
 		helper.succeed();
 	}
 
+	@GameTest(skyAccess = true)
+	public void aSavedCopyNeverPaintsOverALiveDrawing(GameTestHelper helper) throws Exception {
+		ServerLevel level = helper.getLevel();
+		BlockPos at = helper.absolutePos(HIGH_UP);
+		LevelChunk chunk = level.getChunkAt(at);
+		Path root = Files.createTempDirectory("web-map-test");
+		Output output = new Output(root);
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), () -> { });
+
+		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
+		drawing.loaded(level, chunk);
+		drawing.tick();
+		int[] stale = new int[256];
+		java.util.Arrays.fill(stale, 0xFFFF0000);
+		drawing.paintSaved(level, Dimensions.folder(level.dimension()), chunk.getPos().x(), chunk.getPos().z(), stale);
+		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
+		output.close(30);
+
+		BufferedImage image = ImageIO.read(tile(root, level, at).toFile());
+		int pixel = image.getRGB(Math.floorMod(at.getX(), 512), Math.floorMod(at.getZ(), 512));
+		helper.assertTrue(isColourOf(Blocks.GOLD_BLOCK, level, at, pixel),
+			Component.literal("the live gold, not the saved copy's " + Integer.toHexString(pixel)));
+		helper.succeed();
+	}
+
+	@GameTest(skyAccess = true)
+	public void aFlushThatCannotWriteSaysSo(GameTestHelper helper) throws Exception {
+		ServerLevel level = helper.getLevel();
+		Path root = Files.createTempDirectory("web-map-test");
+		// A file where the tiles folder goes: nothing can be written under it, as on a full disk
+		Files.writeString(root.resolve("tiles"), "");
+		Output output = new Output(root);
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), () -> { });
+		drawing.paintSaved(level, Dimensions.folder(level.dimension()), 1000000, 1000000, new int[256]);
+
+		boolean failed = false;
+		try {
+			drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
+		} catch (java.util.concurrent.ExecutionException expected) {
+			failed = true;
+		}
+		output.close(30);
+		helper.assertTrue(failed, Component.literal("a flush that could not write reported it"));
+		helper.succeed();
+	}
+
+	private static Path tile(Path root, ServerLevel level, BlockPos at) {
+		return root.resolve("tiles").resolve(Dimensions.folder(level.dimension())).resolve("4")
+			.resolve(Math.floorDiv(at.getX(), 512) + "_" + Math.floorDiv(at.getZ(), 512) + ".png");
+	}
+
 	private static boolean isColourOf(Block block, ServerLevel level, BlockPos at, int pixel) {
 		MapColor colour = block.defaultBlockState().getMapColor(level, at);
 		for (MapColor.Brightness brightness : MapColor.Brightness.values()) {

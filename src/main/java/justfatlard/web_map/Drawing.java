@@ -97,9 +97,24 @@ final class Drawing {
 		return drawn != null && drawn.contains(pos);
 	}
 
-	/** Any thread: a saved chunk's colours, painted in turn with the live ones. */
-	void paintSaved(String dimension, int x, int z, int[] colors) {
-		output.later("paint saved chunk " + x + ", " + z, () -> tiles.paint(dimension, x, z, colors));
+	/**
+	 * Any thread: a saved chunk's colours, painted in turn with the live ones. Asked again on the writer
+	 * thread whether the chunk was drawn live, since that may have happened after the saved copy was read.
+	 */
+	void paintSaved(ServerLevel level, String dimension, int x, int z, int[] colors) {
+		long pos = ChunkPos.pack(x, z);
+		output.later("paint saved chunk " + x + ", " + z, () -> {
+			if (!drawnLive(level, pos)) tiles.paint(dimension, x, z, colors);
+		});
+	}
+
+	/** Any thread: writes what was painted, completing once it is on disk, or with the error that stopped it. */
+	java.util.concurrent.CompletableFuture<Boolean> flushNow() {
+		return output.submit(() -> {
+			boolean wrote = tiles.flush();
+			if (wrote) whenWritten.run();
+			return wrote;
+		});
 	}
 
 	void forget() {
