@@ -102,3 +102,12 @@ html, body { touch-action: none; overscroll-behavior: none; }
 .measuring, .measuring .leaflet-interactive { cursor: crosshair; }
 .measure-total { background: var(--panel); color: var(--fg); border: 0; box-shadow: none; font-weight: 600; }
 .measure-total::before { display: none; }
+
+.spot p { margin: 0 0 4px; }
+.spot-where { font: 600 13px/1.4 ui-monospace, monospace; }
+.spot-about:empty { display: none; }
+.spot-about { margin-bottom: 6px; }
+.spot-about .muted-text { color: #aaa; }
+.spot-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.spot button { background: none; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 4px; color: var(--fg); padding: 3px 8px; font: inherit; cursor: pointer; }
+.spot-other button { padding: 1px 6px; margin-left: 4px; }

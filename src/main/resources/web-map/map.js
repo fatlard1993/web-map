@@ -333,14 +333,18 @@ map.on('zoomend', declutterSoon);
 
 // --- Portals lead somewhere: clicking one end shows the other, in its own dimension if need be ---
 
+// Answers whether the dimension is drawn, and so whether the map is now showing it.
+function showDimension(folder) {
+	if (folder === dimension) return true;
+	if (!tileLayers[folder]) return false;
+	map.removeLayer(tileLayers[dimension]);
+	// The layers control hears this and switches everything else over
+	tileLayers[folder].addTo(map);
+	return true;
+}
+
 function travel(end) {
-	if (end.dimension !== dimension) {
-		if (!tileLayers[end.dimension]) return;
-		map.removeLayer(tileLayers[dimension]);
-		// The layers control hears this and switches everything else over
-		tileLayers[end.dimension].addTo(map);
-	}
-	map.setView(at(end.x, end.z), Math.max(map.getZoom(), NATIVE - 1));
+	if (showDimension(end.dimension)) map.setView(at(end.x, end.z), Math.max(map.getZoom(), NATIVE - 1));
 }
 
 // --- Markers ---
@@ -543,6 +547,89 @@ async function refreshPlayers() {
 	elsewhere.textContent = 'Elsewhere: ' + away.map(p => p.name + ' (' + titleOf(p.dimension) + ')').join(', ');
 }
 
+// --- Links: the address holds the dimension and view, so a spot can be sent to someone ---
+
+const linkTo = (folder, x, z, zoom) => location.pathname + location.search + '#' + [folder, x, z, zoom].join('/');
+const LINK = /^#([a-z0-9_.-]+)\/(-?\d+)\/(-?\d+)\/(-?\d+)$/;
+
+function followLink() {
+	const link = LINK.exec(location.hash);
+	if (!link) return false;
+	showDimension(link[1]);
+	// The least zoom is fitted only once the tiles' reach is known, after this
+	map.setMinZoom(Math.min(map.getMinZoom(), +link[4]));
+	map.setView(at(+link[2], +link[3]), Math.max(map.getMinZoom(), Math.min(MOST, +link[4])), { animate: false });
+	return true;
+}
+
+function keepLink() {
+	const c = map.getCenter();
+	history.replaceState(null, '', linkTo(dimension, Math.floor(c.lng), Math.floor(c.lat), map.getZoom()));
+}
+
+async function copy(text, button) {
+	try {
+		await navigator.clipboard.writeText(text);
+		const was = button.textContent;
+		button.textContent = 'Copied';
+		setTimeout(() => { button.textContent = was; }, 1200);
+	} catch (e) {
+		prompt('Copy this:', text);
+	}
+}
+
+// --- A spot: clicked, it says where it is, and what is there as far as the map knows ---
+
+const OTHER_SIDE = { minecraft_overworld: ['minecraft_the_nether', 1 / 8], minecraft_the_nether: ['minecraft_overworld', 8] };
+
+function spotView(x, z) {
+	const view = document.createElement('div');
+	view.className = 'spot';
+	const heading = document.createElement('p');
+	heading.className = 'spot-where';
+	heading.textContent = 'x ' + x + ', z ' + z;
+	const about = document.createElement('div');
+	about.className = 'spot-about';
+	const buttons = document.createElement('div');
+	buttons.className = 'spot-buttons';
+	const button = (text, onClick) => {
+		const b = document.createElement('button');
+		b.type = 'button';
+		b.textContent = text;
+		b.addEventListener('click', () => onClick(b));
+		buttons.append(b);
+		return b;
+	};
+	const spot = { y: null };
+	button('Copy x z', b => copy(x + ' ' + (spot.y ?? '~') + ' ' + z, b));
+	button('Copy /tp', b => copy('/tp @s ' + x + ' ' + (spot.y ?? '~') + ' ' + z, b));
+	button('Copy link', b => copy(location.origin + linkTo(dimension, x, z, Math.max(map.getZoom(), NATIVE)), b));
+	const other = OTHER_SIDE[dimension];
+	if (other && tileLayers[other[0]]) {
+		const ox = Math.floor(x * other[1]), oz = Math.floor(z * other[1]);
+		const line = document.createElement('p');
+		line.className = 'spot-other';
+		line.textContent = 'In the ' + titleOf(other[0]) + ': x ' + ox + ', z ' + oz + ' ';
+		const go = document.createElement('button');
+		go.type = 'button';
+		go.textContent = 'Show';
+		go.addEventListener('click', () => { map.closePopup(); travel({ dimension: other[0], x: ox, z: oz }); });
+		line.append(go);
+		view.append(heading, about, line, buttons);
+	} else {
+		view.append(heading, about, buttons);
+	}
+	view.spot = spot;
+	view.about = about;
+	return view;
+}
+
+map.on('click', e => {
+	if (measuring) return;
+	const x = Math.floor(e.latlng.lng), z = Math.floor(e.latlng.lat);
+	L.popup({ maxWidth: 320, className: 'spot-popup' }).setLatLng(at(x, z)).setContent(spotView(x, z)).openOn(map);
+});
+
 // --- Measuring: points clicked in turn, and how far it is along them ---
 
 let measuring = null;
@@ -612,6 +699,9 @@ function start(meta) {
 	}
 	tileLayers[dimension].addTo(map);
 	new Measure().addTo(map);
+	followLink();
+	map.on('moveend', keepLink);
+	addEventListener('hashchange', followLink);
 	refreshTiles();
 	setInterval(refreshTiles, 30000);
 
