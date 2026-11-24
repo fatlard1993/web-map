@@ -267,8 +267,15 @@ final class Layers {
 	}
 
 	/** Whether the player asked to be on maps, where Pandorical is there to ask; everyone is, without it. */
-	private static boolean shownOnMaps(MinecraftServer server, java.util.UUID player) {
-		return !PANDORICAL || justfatlard.web_map.integration.MapVisibility.shown(server, player);
+	private boolean shownOnMaps(MinecraftServer server, java.util.UUID player) {
+		if (!PANDORICAL || broken.contains("visibility")) return true;
+		try {
+			return justfatlard.web_map.integration.MapVisibility.shown(server, player);
+		} catch (LinkageError older) {
+			broken.add("visibility");
+			Output.LOGGER.warn("Pandorical is older than 15.37.0, so players cannot choose to be left off the map");
+			return true;
+		}
 	}
 
 	/** A layer whose data comes from another mod is offered only where that mod is installed. */
