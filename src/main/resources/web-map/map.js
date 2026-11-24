@@ -507,6 +507,15 @@ async function refreshMarkers() {
 }
 
 const playerMarkers = new Map();
+// A player glides from one place to the next over the five seconds between them, unless they went
+// farther than anyone walks in that time, a teleport, or the map is mid-zoom, when gliding would drift.
+const GLIDES_UP_TO = 96;
+let zooming = false;
+map.on('zoomstart', () => {
+	zooming = true;
+	for (const marker of playerMarkers.values()) marker.getElement()?.classList.remove('glide');
+});
+map.on('zoomend', () => { zooming = false; });
 const elsewhere = document.getElementById('elsewhere');
 async function refreshPlayers() {
 	if (!layers.players) return;
@@ -521,7 +530,9 @@ async function refreshPlayers() {
 			playerMarkers.set(p.name, marker);
 			marker.addTo(layers.players);
 		}
-		marker.setLatLng(at(p.x, p.z));
+		const from = marker.getLatLng(), to = at(p.x, p.z);
+		marker.getElement()?.classList.toggle('glide', !zooming && Math.hypot(from.lat - to[0], from.lng - to[1]) <= GLIDES_UP_TO);
+		marker.setLatLng(to);
 	}
 	declutterSoon();
 	for (const [name, marker] of playerMarkers) {
