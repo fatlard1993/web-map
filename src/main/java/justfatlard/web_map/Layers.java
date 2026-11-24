@@ -58,6 +58,7 @@ final class Layers {
 	private final Marks marks;
 	private final Faces faces;
 	private final Supplier<HiddenAreas> hidden;
+	private volatile boolean stopped;
 	private final Sightings<List<Spot>> sightings = new Sightings<>();
 
 	private record Spot(String name, String dimension, int x, int z, String wornName) {}
@@ -123,13 +124,12 @@ final class Layers {
 		if (ship != null && ship) ships.gone(entity.getUUID().toString());
 	}
 
-	/** On the calling thread, so the page shows nobody online once the server is down. Never throws. */
+	/** Leaves the page showing nobody online once the server is down. Never throws. */
 	void stop() {
-		try {
-			output.write("players.json", "[]");
-		} catch (Exception e) {
-			Output.LOGGER.warn("Could not clear players.json", e);
-		}
+		// Queued behind any players.json still waiting, and the writer drains before the server is gone,
+		// so the last word is that nobody is on; written here as well, it could race one still queued
+		stopped = true;
+		output.writeLater("players.json", "[]");
 		if (BIG_BOATS) {
 			try {
 				ships.write(ships.snapshot());
@@ -214,7 +214,7 @@ final class Layers {
 				String face = faces.face(entry.get("name").getAsString(), skin);
 				if (face != null) entry.addProperty("face", face);
 			}
-			output.write("players.json", GSON.toJson(players));
+			if (!stopped) output.write("players.json", GSON.toJson(players));
 		});
 	}
 
