@@ -165,6 +165,8 @@ final class Backfill {
 				}
 				if (colours == null) continue;
 				southEdges.put(pos.pack(), colours.southEdge());
+				// Once stopping, the writer may be draining or gone, and a paint then would run on this thread
+				if (stopping) return;
 				drawing.paintSaved(level, dimension, pos.x(), pos.z(), colours);
 				Thread.sleep(PAUSE_MILLIS);
 			}
