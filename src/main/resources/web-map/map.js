@@ -198,6 +198,7 @@ map.on('baselayerchange', e => {
 	if (layers.sky) layers.sky.swap();
 	if (layers.daylight) layers.daylight.show();
 	showBorder();
+	keepLink();
 });
 
 function offer(key, layer = L.layerGroup()) {
@@ -688,7 +689,11 @@ function followLink() {
 	return true;
 }
 
+// Kept only once the address the page opened with has been followed: the first dimension's tiles are
+// added before that, and keeping the address then would overwrite the link being opened.
+let keepingLink = false;
 function keepLink() {
+	if (!keepingLink) return;
 	const c = map.getCenter();
 	history.replaceState(null, '', linkTo(dimension, Math.floor(c.lng), Math.floor(c.lat), map.getZoom()));
 }
@@ -1034,6 +1039,7 @@ function start(meta) {
 	new Search().addTo(map);
 	new Measure().addTo(map);
 	followLink();
+	keepingLink = true;
 	map.on('moveend', keepLink);
 	addEventListener('hashchange', followLink);
 	refreshTiles();
