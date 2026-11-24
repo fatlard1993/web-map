@@ -52,12 +52,14 @@ final class Layers {
 	private final Homes homes = new Homes();
 	private final ShipLog ships;
 	private final DeathLog deaths;
+	private final Signs signs;
 	/** A layer whose mod threw or did not match this build: off until the server restarts. Both threads. */
 	private final Set<String> broken = ConcurrentHashMap.newKeySet();
 	private volatile JsonArray photos = new JsonArray();
 
-	Layers(Output output, WebMapConfig config, MinecraftServer server) {
+	Layers(Output output, WebMapConfig config, MinecraftServer server, Signs signs) {
 		this.output = output;
+		this.signs = signs;
 		this.config = config;
 		config.dimensions.forEach(id -> drawnFolders.add(Dimensions.folder(id)));
 		this.ships = new ShipLog(server.getWorldPath(LevelResource.ROOT).resolve("web-map").resolve("ships.json"));
@@ -219,6 +221,17 @@ final class Layers {
 			if (config.ships && !broken.contains("ships")) markers.add("ships", shipMarkers());
 		}
 		if (config.photos && PHOTOGRAPHY) markers.add("photos", photos);
+		if (config.signs) {
+			JsonArray list = new JsonArray();
+			for (Signs.Sign sign : signs.all()) {
+				if (!drawnFolders.contains(sign.dimension())) continue;
+				JsonObject entry = spot(sign.dimension(), sign.x(), sign.z());
+				entry.addProperty("y", sign.y());
+				entry.addProperty("text", sign.text());
+				list.add(entry);
+			}
+			markers.add("signs", list);
+		}
 		if (config.deaths) {
 			JsonArray list = new JsonArray();
 			for (DeathLog.Death death : deaths.all(System.currentTimeMillis())) {

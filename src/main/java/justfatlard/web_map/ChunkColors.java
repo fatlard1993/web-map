@@ -13,6 +13,8 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
 
+import java.util.List;
+
 /**
  * A chunk's 16x16 columns as the colours an in-game map gives them: the top block with a map colour,
  * lighter or darker by how its height compares with the column to the north, and water shaded by its
@@ -56,8 +58,15 @@ final class ChunkColors {
 		}
 	}
 
-	/** A chunk's colours and what is in it, and the heights along its south edge, which the chunk south of it is shaded against. */
-	record Drawn(int[] colors, Info info, int[] southEdge) {}
+	/**
+	 * A chunk's colours and what is in it, the heights along its south edge, which the chunk south of
+	 * it is shaded against, and the map signs in it.
+	 */
+	record Drawn(int[] colors, Info info, int[] southEdge, List<Signs.Sign> signs) {
+		Drawn withSigns(List<Signs.Sign> found) {
+			return new Drawn(colors, info, southEdge, found);
+		}
+	}
 
 	/** How far under the top block the ground is looked for, past water, leaves and plants. */
 	private static final int GROUND_DEPTH = 128;
@@ -67,7 +76,8 @@ final class ChunkColors {
 		int slice = sliceOf(level);
 		LevelChunk north = level.getChunkSource().getChunkNow(chunk.getPos().x(), chunk.getPos().z() - 1);
 		int[] northEdge = north == null ? null : edge(loaded(north), level, slice, level.getMinY(), baseX, baseZ - 1);
-		return draw(loaded(chunk), level, slice, level.getMinY(), baseX, baseZ, northEdge);
+		return draw(loaded(chunk), level, slice, level.getMinY(), baseX, baseZ, northEdge)
+			.withSigns(Signs.of(Dimensions.folder(level.dimension()), chunk));
 	}
 
 	static int sliceOf(ServerLevel level) {
@@ -111,7 +121,7 @@ final class ChunkColors {
 				previous = column.height;
 			}
 		}
-		return new Drawn(colors, info, southEdge);
+		return new Drawn(colors, info, southEdge, List.of());
 	}
 
 	private static void describe(Info info, int index, Blocks blocks, int x, int y, int z, int minY) {

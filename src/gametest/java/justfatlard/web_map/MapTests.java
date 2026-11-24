@@ -38,7 +38,7 @@ public class MapTests {
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root.resolve("palette.json"), extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root, extents -> { });
 
 		drawing.loaded(level, chunk);
 		drawing.tick();
@@ -141,13 +141,46 @@ public class MapTests {
 	}
 
 	@GameTest(skyAccess = true)
+	public void aMapSignIsAMarkerLiveAndSaved(GameTestHelper helper) {
+		BlockPos signAt = new BlockPos(2, 2, 2);
+		helper.setBlock(signAt, Blocks.OAK_SIGN);
+		var sign = (net.minecraft.world.level.block.entity.SignBlockEntity) helper.getBlockEntity(signAt, net.minecraft.world.level.block.entity.SignBlockEntity.class);
+		sign.setText(lines(" [MAP] ", "Ben's", "mine", ""), net.minecraft.world.level.block.entity.SignTextSlot.FRONT);
+		BlockPos plainAt = new BlockPos(3, 2, 2);
+		helper.setBlock(plainAt, Blocks.OAK_SIGN);
+		((net.minecraft.world.level.block.entity.SignBlockEntity) helper.getBlockEntity(plainAt, net.minecraft.world.level.block.entity.SignBlockEntity.class))
+			.setText(lines("just a sign", "", "", ""), net.minecraft.world.level.block.entity.SignTextSlot.FRONT);
+		ServerLevel level = helper.getLevel();
+		BlockPos at = helper.absolutePos(signAt);
+		String dimension = Dimensions.folder(level.dimension());
+
+		var live = Signs.of(dimension, level.getChunkAt(at)).stream().filter(s -> s.x() == at.getX() && s.z() == at.getZ()).toList();
+		helper.assertTrue(live.size() == 1 && live.get(0).text().equals("Ben's mine") && live.get(0).y() == at.getY(),
+			Component.literal("the live chunk's map sign, named by its other lines, not " + live));
+		helper.assertTrue(Signs.of(dimension, level.getChunkAt(helper.absolutePos(plainAt))).stream().noneMatch(s -> s.x() == helper.absolutePos(plainAt).getX()),
+			Component.literal("a sign without [map] first is not a marker"));
+
+		level.getChunkSource().save(true);
+		ChunkColors.Drawn saved = Backfill.drawSaved(level, net.minecraft.world.level.ChunkPos.containing(at), null);
+		var fromSave = saved == null ? java.util.List.<Signs.Sign>of() : saved.signs().stream().filter(s -> s.x() == at.getX() && s.z() == at.getZ()).toList();
+		helper.assertTrue(fromSave.size() == 1 && fromSave.get(0).text().equals("Ben's mine"),
+			Component.literal("the saved chunk's map sign, read from its block entity's NBT, not " + fromSave));
+		helper.succeed();
+	}
+
+	private static net.minecraft.world.level.block.entity.SignText lines(String... text) {
+		java.util.List<Component> lines = java.util.Arrays.stream(text).map(line -> (Component) Component.literal(line)).toList();
+		return new net.minecraft.world.level.block.entity.SignText(lines, lines, net.minecraft.world.item.DyeColor.BLACK, false);
+	}
+
+	@GameTest(skyAccess = true)
 	public void aSavedCopyNeverPaintsOverALiveDrawing(GameTestHelper helper) throws Exception {
 		ServerLevel level = helper.getLevel();
 		BlockPos at = helper.absolutePos(HIGH_UP);
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root.resolve("palette.json"), extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root, extents -> { });
 
 		helper.setBlock(HIGH_UP, Blocks.GOLD_BLOCK);
 		drawing.loaded(level, chunk);
@@ -155,7 +188,7 @@ public class MapTests {
 		int[] stale = new int[256];
 		java.util.Arrays.fill(stale, 0xFFFF0000);
 		drawing.paintSaved(level, Dimensions.folder(level.dimension()), chunk.getPos().x(), chunk.getPos().z(),
-			new ChunkColors.Drawn(stale, ChunkColors.Info.empty(), new int[16]));
+			new ChunkColors.Drawn(stale, ChunkColors.Info.empty(), new int[16], java.util.List.of()));
 		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
 		output.close(30);
 
@@ -173,9 +206,9 @@ public class MapTests {
 		// A file where the tiles folder goes: nothing can be written under it, as on a full disk
 		Files.writeString(root.resolve("tiles"), "");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root.resolve("palette.json"), extents -> { });
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), root, extents -> { });
 		drawing.paintSaved(level, Dimensions.folder(level.dimension()), 1000000, 1000000,
-			new ChunkColors.Drawn(new int[256], ChunkColors.Info.empty(), new int[16]));
+			new ChunkColors.Drawn(new int[256], ChunkColors.Info.empty(), new int[16], java.util.List.of()));
 
 		boolean failed = false;
 		try {

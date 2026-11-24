@@ -33,6 +33,7 @@ final class WebMapConfig {
 	boolean ships = true;
 	boolean photos = true;
 	boolean deaths = true;
+	boolean signs = true;
 	boolean border = true;
 	boolean daylight = true;
 	boolean backfill = true;
@@ -47,6 +48,7 @@ final class WebMapConfig {
 		layers.put("ships", ships);
 		layers.put("photos", photos);
 		layers.put("deaths", deaths);
+		layers.put("signs", signs);
 		layers.put("border", border);
 		layers.put("daylight", daylight);
 		return layers;
@@ -90,7 +92,7 @@ final class WebMapConfig {
 	private static WebMapConfig nothing() {
 		WebMapConfig none = new WebMapConfig();
 		none.dimensions = List.of();
-		none.players = none.homes = none.villages = none.spawn = none.portals = none.ships = none.photos = none.deaths = none.border = none.daylight = none.backfill = false;
+		none.players = none.homes = none.villages = none.spawn = none.portals = none.ships = none.photos = none.deaths = none.signs = none.border = none.daylight = none.backfill = false;
 		return none;
 	}
 

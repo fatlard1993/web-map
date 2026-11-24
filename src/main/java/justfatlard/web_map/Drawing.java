@@ -32,6 +32,7 @@ final class Drawing {
 	private final Output output;
 	private final TileStore tiles;
 	private final InfoStore info;
+	private final Signs signs;
 	private final Set<String> dimensions;
 	private final Map<ServerLevel, LongLinkedOpenHashSet> queued = new HashMap<>();
 	private final Map<ServerLevel, Long2IntMap> drawnColours = new HashMap<>();
@@ -43,11 +44,12 @@ final class Drawing {
 	 * @param whenWritten run on the writer thread with the tiles' extents, once what is on disk has been
 	 *                    read and after any flush that wrote tiles
 	 */
-	/** @param palette where the info pictures' palette is kept, in the world folder */
-	Drawing(Output output, Set<String> dimensions, Path palette, Consumer<String> whenWritten) {
+	/** @param kept the world folder's web-map folder, where what is read back at start is kept */
+	Drawing(Output output, Set<String> dimensions, Path kept, Consumer<String> whenWritten) {
 		this.output = output;
 		this.tiles = new TileStore(output.root.resolve("tiles"));
-		this.info = new InfoStore(output.root.resolve("info"), palette);
+		this.info = new InfoStore(output.root.resolve("info"), kept.resolve("info-palette.json"));
+		this.signs = new Signs(kept.resolve("signs.json"));
 		this.dimensions = dimensions;
 		this.whenWritten = whenWritten;
 		output.later("read the map tiles", () -> {
@@ -101,6 +103,7 @@ final class Drawing {
 	void flush() {
 		output.later("write map tiles", () -> {
 			info.flush();
+			signs.flush();
 			if (tiles.flush()) whenWritten.accept(tiles.extentsJson());
 		});
 	}
@@ -126,6 +129,7 @@ final class Drawing {
 	java.util.concurrent.CompletableFuture<Boolean> flushNow() {
 		return output.submit(() -> {
 			info.flush();
+			signs.flush();
 			boolean wrote = tiles.flush();
 			if (wrote) whenWritten.accept(tiles.extentsJson());
 			return wrote;
@@ -145,7 +149,7 @@ final class Drawing {
 		ChunkColors.Drawn drawn = ChunkColors.of(level, chunk);
 		ChunkColors.Info about = drawn.info();
 		int hash = Objects.hash(Arrays.hashCode(drawn.colors()), Arrays.hashCode(about.tops()), Arrays.hashCode(about.grounds()),
-			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()));
+			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()), drawn.signs());
 		long pos = chunk.getPos().pack();
 		Long2IntMap colours = drawnColours.computeIfAbsent(level, l -> new Long2IntOpenHashMap());
 		if (colours.containsKey(pos) && colours.get(pos) == hash) return;
@@ -160,5 +164,10 @@ final class Drawing {
 	private void paint(String dimension, int x, int z, ChunkColors.Drawn drawn) throws java.io.IOException {
 		tiles.paint(dimension, x, z, drawn.colors());
 		info.paint(dimension, x, z, drawn.info());
+		signs.drawn(dimension, x, z, drawn.signs());
+	}
+
+	Signs signs() {
+		return signs;
 	}
 }

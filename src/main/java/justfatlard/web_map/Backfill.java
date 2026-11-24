@@ -187,7 +187,8 @@ final class Backfill {
 		if (data.chunkStatus() != ChunkStatus.FULL) return null;
 		int minY = level.getMinY();
 		return ChunkColors.draw(saved(data, level, minY, Mth.ceillog2(level.getHeight() + 1)), EmptyBlockGetter.INSTANCE,
-			ChunkColors.sliceOf(level), minY, pos.getMinBlockX(), pos.getMinBlockZ(), northEdge);
+			ChunkColors.sliceOf(level), minY, pos.getMinBlockX(), pos.getMinBlockZ(), northEdge)
+			.withSigns(Signs.saved(Dimensions.folder(level.dimension()), data.blockEntities(), level.registryAccess()));
 	}
 
 	/** A parsed saved chunk's blocks; a column without a stored height is found by looking down from the top. */

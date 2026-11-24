@@ -11,10 +11,10 @@ const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attribut
 map.setView([0, 0], NATIVE);
 
 const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
-	portals: 'Portal links', ships: 'Ships', photos: 'Photos', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', grid: 'Grid' };
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', grid: 'Grid' };
 const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
 const SHOWN_BY_DEFAULT = { grid: false };
-const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'deaths'];
+const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'signs', 'deaths'];
 const touch = matchMedia('(hover: none)').matches;
 // A pinch anywhere zooms the map, never the page: Safari on iOS ignores touch-action for pinches, so
 // its own gesture events are refused as well.
@@ -213,7 +213,7 @@ const Grid = L.GridLayer.extend({
 // many more, unless the map is in as far as it goes. Its lines act as their labels would, and any
 // other line zooms in on the stack, which spreads it apart.
 const labelled = new Set();
-const RANK = ['spawn', 'player', 'village', 'portal', 'ship', 'home', 'death', 'photo'];
+const RANK = ['spawn', 'player', 'village', 'sign', 'portal', 'ship', 'home', 'death', 'photo'];
 const LINE = 17;
 const STACK_SHOWS = 5;
 const measure = document.createElement('canvas').getContext('2d');
@@ -492,6 +492,9 @@ async function refreshMarkers() {
 			const text = (ship.name || 'A ship') + (ship.live ? '' : ' (last seen)');
 			named(L.marker(at(ship.x, ship.z), { icon: dot(ship.live ? 'ship' : 'ship away') }), text).addTo(layers.ships);
 		}
+	}
+	if (layers.signs) {
+		for (const sign of here(markers.signs)) named(L.marker(at(sign.x, sign.z), { icon: dot('sign') }), sign.text).addTo(layers.signs);
 	}
 	if (layers.deaths) {
 		for (const death of here(markers.deaths)) {
