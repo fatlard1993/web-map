@@ -2,6 +2,7 @@ package justfatlard.web_map;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -10,11 +11,13 @@ import net.minecraft.world.level.material.MapColor;
 /**
  * A chunk's 16x16 columns as the colours an in-game map gives them: the top block with a map colour,
  * lighter or darker by how its height compares with the column to the north, and water shaded by its
- * depth. Read on the server thread, so the chunk cannot change under it.
+ * depth.
  *
  * <p>Under a roof, the Nether's, looking down from the top meets only the roof, so such a column is
  * read from a slice a little under the dimension's ceiling instead: from inside rock it steps down to
  * the first opening and draws the floor below it, and rock all the way down is drawn as rock.
+ *
+ * <p>The same reading serves a loaded chunk, on the server thread, and a saved one parsed off it.
  */
 final class ChunkColors {
 	private ChunkColors() {}
@@ -22,21 +25,45 @@ final class ChunkColors {
 	/** How far under a roofed dimension's ceiling its slice is taken. */
 	private static final int CEILING_GAP = 24;
 
-	/** ARGB, row-major by z then x; 0 for a column with nothing to draw. */
+	/** The blocks of one chunk, by world position. */
+	interface Blocks {
+		/** The y of the column's highest block. */
+		int top(int x, int z);
+
+		BlockState at(int x, int y, int z);
+	}
+
+	/** A chunk's colours, and the heights along its south edge, which the chunk south of it is shaded against. */
+	record Drawn(int[] colors, int[] southEdge) {}
+
 	static int[] of(ServerLevel level, LevelChunk chunk) {
+		int baseX = chunk.getPos().getMinBlockX(), baseZ = chunk.getPos().getMinBlockZ();
+		int slice = sliceOf(level);
+		LevelChunk north = level.getChunkSource().getChunkNow(chunk.getPos().x(), chunk.getPos().z() - 1);
+		int[] northEdge = north == null ? null : edge(loaded(north), level, slice, level.getMinY(), baseX, baseZ - 1);
+		return draw(loaded(chunk), level, slice, level.getMinY(), baseX, baseZ, northEdge).colors();
+	}
+
+	static int sliceOf(ServerLevel level) {
+		return level.dimensionType().hasCeiling() ? level.getMinY() + level.dimensionType().logicalHeight() - CEILING_GAP : Integer.MAX_VALUE;
+	}
+
+	/**
+	 * @param getter    what a block's map colour is asked of; a saved chunk has no world to ask
+	 * @param northEdge heights along the row just north, or null to shade the first row flat
+	 */
+	static Drawn draw(Blocks blocks, BlockGetter getter, int slice, int minY, int baseX, int baseZ, int[] northEdge) {
 		int[] colors = new int[256];
-		int baseX = chunk.getPos().getMinBlockX();
-		int baseZ = chunk.getPos().getMinBlockZ();
-		int minY = level.getMinY();
-		int slice = level.dimensionType().hasCeiling() ? minY + level.dimensionType().logicalHeight() - CEILING_GAP : Integer.MAX_VALUE;
+		int[] southEdge = new int[16];
 		BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
-		int[] northHeights = northEdge(level, chunk, baseX, baseZ, minY, slice, cursor);
-
 		for (int x = 0; x < 16; x++) {
-			int previous = northHeights[x];
+			int previous = Integer.MIN_VALUE;
+			if (northEdge != null) previous = northEdge[x];
 			for (int z = 0; z < 16; z++) {
-				Column column = column(level, chunk, baseX + x, baseZ + z, minY, slice, cursor);
+				Column column = column(blocks, getter, baseX + x, baseZ + z, minY, slice, cursor);
+				if (previous == Integer.MIN_VALUE) previous = column.height;
+				if (z == 15) southEdge[x] = column.height;
 				if (column.color == MapColor.NONE) {
 					previous = column.height;
 					continue;
@@ -56,59 +83,63 @@ final class ChunkColors {
 				previous = column.height;
 			}
 		}
-		return colors;
+		return new Drawn(colors, southEdge);
+	}
+
+	/** The heights of one row of 16 columns, from x = baseX. */
+	private static int[] edge(Blocks blocks, BlockGetter getter, int slice, int minY, int baseX, int z) {
+		int[] heights = new int[16];
+		BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+		for (int x = 0; x < 16; x++) heights[x] = column(blocks, getter, baseX + x, z, minY, slice, cursor).height;
+		return heights;
+	}
+
+	private static Blocks loaded(LevelChunk chunk) {
+		BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+		return new Blocks() {
+			public int top(int x, int z) {
+				return chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
+			}
+
+			public BlockState at(int x, int y, int z) {
+				return chunk.getBlockState(cursor.set(x, y, z));
+			}
+		};
 	}
 
 	private record Column(MapColor color, int height, int waterDepth) {}
 
-	private static Column column(ServerLevel level, LevelChunk chunk, int x, int z, int minY, int slice,
+	private static Column column(Blocks blocks, BlockGetter getter, int x, int z, int minY, int slice,
 			BlockPos.MutableBlockPos cursor) {
-		// getHeight is the top block's own y; the walk below starts one above it and steps down onto it
-		int y = Math.min(chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15) + 1, slice);
+		// The walk below starts one above the top block and steps down onto it
+		int y = Math.min(blocks.top(x, z) + 1, slice);
 		if (y == slice) {
 			// Inside rock: down to the first opening, or the rock itself when there is none.
 			int top = y - 1;
-			while (y > minY && chunk.getBlockState(cursor.set(x, y - 1, z)).getMapColor(level, cursor) != MapColor.NONE) y--;
-			if (y <= minY) {
-				MapColor rock = chunk.getBlockState(cursor.set(x, top, z)).getMapColor(level, cursor);
-				return new Column(rock, top, 0);
-			}
+			while (y > minY && colorOf(blocks.at(x, y - 1, z), getter, cursor.set(x, y - 1, z)) != MapColor.NONE) y--;
+			if (y <= minY) return new Column(colorOf(blocks.at(x, top, z), getter, cursor.set(x, top, z)), top, 0);
 		}
-		BlockState state;
 		MapColor color = MapColor.NONE;
 		while (y > minY) {
 			y--;
-			state = chunk.getBlockState(cursor.set(x, y, z));
-			color = state.getMapColor(level, cursor);
+			color = colorOf(blocks.at(x, y, z), getter, cursor.set(x, y, z));
 			if (color != MapColor.NONE) break;
 		}
 		if (color == MapColor.NONE) return new Column(MapColor.NONE, y, 0);
 
 		int depth = 0;
-		if (!chunk.getFluidState(cursor.set(x, y, z)).isEmpty()) {
+		if (!blocks.at(x, y, z).getFluidState().isEmpty()) {
 			int below = y;
-			while (below > minY && !chunk.getFluidState(cursor.set(x, below, z)).isEmpty()) {
+			while (below > minY && !blocks.at(x, below, z).getFluidState().isEmpty()) {
 				below--;
 				depth++;
 			}
-			if (depth > 0 && below > minY) {
-				MapColor floor = chunk.getBlockState(cursor.set(x, below, z)).getMapColor(level, cursor);
-				if (floor == MapColor.NONE) depth = 0;
-			}
+			if (depth > 0 && below > minY && colorOf(blocks.at(x, below, z), getter, cursor.set(x, below, z)) == MapColor.NONE) depth = 0;
 		}
 		return new Column(color, y, depth);
 	}
 
-	/** Heights along the row just north of this chunk, from its neighbour when that is loaded. */
-	private static int[] northEdge(ServerLevel level, LevelChunk chunk, int baseX, int baseZ, int minY, int slice,
-			BlockPos.MutableBlockPos cursor) {
-		int[] heights = new int[16];
-		LevelChunk north = level.getChunkSource().getChunkNow(chunk.getPos().x(), chunk.getPos().z() - 1);
-		for (int x = 0; x < 16; x++) {
-			heights[x] = north != null
-				? column(level, north, baseX + x, baseZ - 1, minY, slice, cursor).height
-				: column(level, chunk, baseX + x, baseZ, minY, slice, cursor).height;
-		}
-		return heights;
+	private static MapColor colorOf(BlockState state, BlockGetter getter, BlockPos pos) {
+		return state.getMapColor(getter, pos);
 	}
 }

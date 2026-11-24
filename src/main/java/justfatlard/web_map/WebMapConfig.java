@@ -32,6 +32,7 @@ final class WebMapConfig {
 	boolean portals = true;
 	boolean ships = true;
 	boolean photos = true;
+	boolean backfill = true;
 
 	Map<String, Boolean> layers() {
 		Map<String, Boolean> layers = new LinkedHashMap<>();
@@ -83,7 +84,7 @@ final class WebMapConfig {
 	private static WebMapConfig nothing() {
 		WebMapConfig none = new WebMapConfig();
 		none.dimensions = List.of();
-		none.players = none.homes = none.villages = none.spawn = none.portals = none.ships = none.photos = false;
+		none.players = none.homes = none.villages = none.spawn = none.portals = none.ships = none.photos = none.backfill = false;
 		return none;
 	}
 

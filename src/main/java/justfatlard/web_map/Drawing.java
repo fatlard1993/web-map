@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Which chunks need drawing, and drawing them a few at a time.
@@ -20,7 +21,7 @@ import java.util.Set;
  * base lands on one tick. A drawn chunk's colours are remembered while it stays loaded, and it is
  * painted only when they differ, so a furnace ticking away changes nothing on the map.
  *
- * <p>Server thread only.
+ * <p>Server thread only, apart from what {@link Backfill} calls, which says so.
  */
 final class Drawing {
 	private static final int DRAWS_PER_TICK = 24;
@@ -30,11 +31,16 @@ final class Drawing {
 	private final Set<String> dimensions;
 	private final Map<ServerLevel, LongLinkedOpenHashSet> queued = new HashMap<>();
 	private final Map<ServerLevel, Long2IntMap> drawnColours = new HashMap<>();
+	/** Chunks drawn from the live world since the server started, which a saved copy must not overwrite. */
+	private final Map<ServerLevel, Set<Long>> drawnLive = new ConcurrentHashMap<>();
+	private final Runnable whenWritten;
 
-	Drawing(Output output, Set<String> dimensions) {
+	/** @param whenWritten run on the writer thread after any flush that wrote tiles */
+	Drawing(Output output, Set<String> dimensions, Runnable whenWritten) {
 		this.output = output;
 		this.tiles = new TileStore(output.root.resolve("tiles"));
 		this.dimensions = dimensions;
+		this.whenWritten = whenWritten;
 	}
 
 	boolean draws(ServerLevel level) {
@@ -78,11 +84,22 @@ final class Drawing {
 		}
 	}
 
-	/** Writes what was painted since the last flush; answers, on the writer thread, whether anything was. */
-	void flush(Runnable whenWritten) {
+	/** Writes what was painted since the last flush. */
+	void flush() {
 		output.later("write map tiles", () -> {
 			if (tiles.flush()) whenWritten.run();
 		});
+	}
+
+	/** Any thread. */
+	boolean drawnLive(ServerLevel level, long pos) {
+		Set<Long> drawn = drawnLive.get(level);
+		return drawn != null && drawn.contains(pos);
+	}
+
+	/** Any thread: a saved chunk's colours, painted in turn with the live ones. */
+	void paintSaved(String dimension, int x, int z, int[] colors) {
+		output.later("paint saved chunk " + x + ", " + z, () -> tiles.paint(dimension, x, z, colors));
 	}
 
 	void forget() {
@@ -101,6 +118,7 @@ final class Drawing {
 		Long2IntMap colours = drawnColours.computeIfAbsent(level, l -> new Long2IntOpenHashMap());
 		if (colours.containsKey(pos) && colours.get(pos) == hash) return;
 		colours.put(pos, hash);
+		drawnLive.computeIfAbsent(level, l -> ConcurrentHashMap.newKeySet()).add(pos);
 		String dimension = Dimensions.folder(level.dimension());
 		int x = chunk.getPos().x(), z = chunk.getPos().z();
 		output.later("paint chunk " + x + ", " + z, () -> tiles.paint(dimension, x, z, colors));

@@ -25,13 +25,22 @@ public class Main implements DedicatedServerModInitializer {
 	private static Output output;
 	private static Drawing drawing;
 	private static Layers layers;
+	private static Backfill backfill;
+	private static WebMapConfig config;
 	private static int ticks;
 
 	@Override
 	public void onInitializeServer() {
 		ServerLifecycleEvents.SERVER_STARTING.register(Main::start);
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-			if (layers != null) layers.started(server);
+			if (layers == null) return;
+			layers.started(server);
+			if (config.backfill) {
+				List<ServerLevel> drawn = new java.util.ArrayList<>();
+				for (ServerLevel level : server.getAllLevels()) if (drawing.draws(level)) drawn.add(level);
+				backfill = new Backfill(server, drawing, drawn);
+				backfill.start();
+			}
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> stop());
 		ServerChunkEvents.CHUNK_LOAD.register((level, chunk, generated) -> {
@@ -52,9 +61,11 @@ public class Main implements DedicatedServerModInitializer {
 	}
 
 	private static void start(MinecraftServer server) {
-		WebMapConfig config = WebMapConfig.load();
+		config = WebMapConfig.load();
 		output = new Output(FabricLoader.getInstance().getGameDir().resolve("web-map"));
-		drawing = new Drawing(output, config.drawnDimensions());
+		Output writing = output;
+		drawing = new Drawing(output, config.drawnDimensions(),
+			() -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + "}"));
 		layers = new Layers(output, config, server);
 		ticks = 0;
 		for (String file : PAGE) {
@@ -73,10 +84,7 @@ public class Main implements DedicatedServerModInitializer {
 		ticks++;
 		drawing.tick();
 		layers.tick(server, ticks);
-		if (ticks % FLUSH_TICKS == 0) {
-			Output writing = output;
-			drawing.flush(() -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + "}"));
-		}
+		if (ticks % FLUSH_TICKS == 0) drawing.flush();
 	}
 
 	/** Never throws: an exception from a stop handler cuts off every handler after it. */
@@ -84,13 +92,15 @@ public class Main implements DedicatedServerModInitializer {
 		Output closing = output;
 		Drawing finishing = drawing;
 		Layers ending = layers;
+		if (backfill != null) backfill.stop();
+		backfill = null;
 		output = null;
 		drawing = null;
 		layers = null;
 		if (closing == null) return;
 		try {
 			ending.stop();
-			finishing.flush(() -> { });
+			finishing.flush();
 			finishing.forget();
 		} catch (Exception e) {
 			Output.LOGGER.warn("Could not finish the map", e);

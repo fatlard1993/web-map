@@ -10,7 +10,7 @@ It runs on the server and nothing needs to be installed by players.
 - A page left open fetches new tiles when the server has drawn something.
 - When nothing is loading or changing, nothing is drawn. Player positions and the other layers are still written every few seconds while the server runs.
 
-The map only knows what has been loaded since it was installed: the rest of an existing world stays blank until players go there.
+The world as it was before the map was installed is drawn once, from the saved region files, without loading any of it into the game. It runs at low priority alongside everything else, even while an empty server is paused, picks up where it stopped after a restart, and is not repeated once finished. A large world takes a while: roughly an hour for a million chunks. A chunk drawn live meanwhile is newer than its save, and keeps the live drawing.
 
 The Nether is drawn as a slice a little under its roof, so it shows the floor and its caves rather than the roof. The End is drawn from above, the void left empty.
 
@@ -35,6 +35,7 @@ Each viewer shows or hides layers in the box at the top right (tap it on a phone
 
 - `dimensions`: the dimensions drawn, by id; default the overworld, the Nether and the End. Anything not listed is never written: no tiles, players, homes, ships, photos or portal ends in it. Tiles already drawn for a dimension you take off the list stay in `web-map/tiles/` until you delete its folder.
 - `players`, `homes`, `villages`, `spawn`, `portals`, `ships`, `photos`: each layer on or off, all on by default. A layer switched off is never written, so no viewer can see it.
+- `backfill`: draw the saved world as described above; on by default. Which regions are done is kept in the world folder, in `web-map/drawn-regions.json`; delete it to draw the saved world again.
 
 If the file cannot be read, nothing is drawn and no layer is offered until it is fixed, rather than every layer being switched back on.
 
@@ -47,7 +48,7 @@ Everything the page needs goes in `web-map/` in the server's folder, and nothing
 - `meta.json`, what the server offers; `players.json` and `markers.json`, the layers; `version.json`, when tiles last changed
 - `photos/`, copies of the pinned photos
 
-Where ships were last seen is kept in the world folder, in `web-map/ships.json`, not in the served folder.
+Where ships were last seen, and which saved regions are drawn, are kept in the world folder, in `web-map/`, not in the served folder.
 
 ## Serving it
 

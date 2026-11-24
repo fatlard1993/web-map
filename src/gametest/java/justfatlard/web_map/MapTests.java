@@ -38,7 +38,7 @@ public class MapTests {
 		LevelChunk chunk = level.getChunkAt(at);
 		Path root = Files.createTempDirectory("web-map-test");
 		Output output = new Output(root);
-		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()));
+		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), () -> { });
 
 		drawing.loaded(level, chunk);
 		drawing.tick();
@@ -47,7 +47,7 @@ public class MapTests {
 		helper.assertTrue(isColourOf(Blocks.GOLD_BLOCK, level, at, seen), Component.literal("the change, gold, read from the chunk, not " + Integer.toHexString(seen)));
 		drawing.changed(level, chunk.getPos());
 		drawing.tick();
-		drawing.flush(() -> { });
+		drawing.flush();
 		// Waits, in wall-clock time, for the writer: a test server ticks as fast as it can, so a wait
 		// counted in ticks can end before a cold writer has written its first image
 		output.close(30);
@@ -59,6 +59,20 @@ public class MapTests {
 		int pixel = image.getRGB(Math.floorMod(at.getX(), 512), Math.floorMod(at.getZ(), 512));
 		helper.assertTrue(isColourOf(Blocks.GOLD_BLOCK, level, at, pixel),
 			Component.literal("the tile shows the gold placed, not " + Integer.toHexString(pixel)));
+		helper.succeed();
+	}
+
+	@GameTest(skyAccess = true)
+	public void aSavedChunkIsDrawnAsItWasSaved(GameTestHelper helper) {
+		helper.setBlock(HIGH_UP, Blocks.EMERALD_BLOCK);
+		ServerLevel level = helper.getLevel();
+		BlockPos at = helper.absolutePos(HIGH_UP);
+		level.getChunkSource().save(true);
+		ChunkColors.Drawn saved = Backfill.drawSaved(level, net.minecraft.world.level.ChunkPos.containing(at), null);
+		helper.assertTrue(saved != null, Component.literal("the saved chunk was read"));
+		int pixel = saved.colors()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
+		helper.assertTrue(isColourOf(Blocks.EMERALD_BLOCK, level, at, pixel),
+			Component.literal("the saved chunk's top block, emerald, not " + Integer.toHexString(pixel)));
 		helper.succeed();
 	}
 

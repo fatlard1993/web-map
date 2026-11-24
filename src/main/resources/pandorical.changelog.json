@@ -3,6 +3,9 @@
     "The world as a map in a web page, top-down and shaded the way in-game maps are, kept current as it changes."
   ],
   "versions": {
+    "0.1.1": [
+      "The world as it was saved before the map was installed is drawn once from the region files, at low priority and without loading it, picking up where it stopped after a restart."
+    ],
     "0.1.0": [
       "Draws the overworld, the Nether and the End into map tiles as their chunks load and change, with a page to view them and layers for players, homes, villages, spawn, portal links, ships, photos and a grid."
     ]
