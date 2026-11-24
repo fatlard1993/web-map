@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>World Map</title>
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<link rel="stylesheet" href="map.css">
+</head>
+<body>
+<div id="map"></div>
+<div id="info">
+	<div id="where">x 0, z 0</div>
+	<div id="elsewhere" hidden></div>
+	<div id="hint" hidden><span>Blank areas have not been seen since the map was installed; they fill in as players go there.</span> <button type="button" id="hint-close" aria-label="Dismiss">&times;</button></div>
+</div>
+<div id="crosshair" hidden></div>
+<div id="viewer" hidden role="dialog" aria-modal="true" aria-label="Photo">
+	<figure><img id="viewer-image" alt="Photo"><figcaption id="viewer-caption"></figcaption></figure>
+	<button type="button" id="viewer-previous" class="viewer-step" aria-label="Previous photo">&lsaquo;</button>
+	<button type="button" id="viewer-next" class="viewer-step" aria-label="Next photo">&rsaquo;</button>
+	<button type="button" id="viewer-close" aria-label="Close">&times;</button>
+</div>
+<script src="leaflet/leaflet.js"></script>
+<script src="map.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "web-map-justfatlard",
+  "version": "${version}",
+  "name": "Web Map",
+  "description": "A map of the world in a web page, drawn the way in-game maps are",
+  "authors": [
+    "justfatlard"
+  ],
+  "contact": {
+    "sources": "https://github.com/fatlard1993/web-map",
+    "issues": "https://github.com/fatlard1993/web-map/issues"
+  },
+  "license": "MIT",
+  "environment": "server",
+  "mixins": [
+    "web-map-justfatlard.mixins.json"
+  ],
+  "entrypoints": {
+    "server": [
+      "justfatlard.web_map.Main"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loaderVersion}",
+    "fabric-api": "${fabricApiVersion}",
+    "minecraft": "${minecraftDependency}",
+    "java": ">=25"
+  },
+  "suggests": {
+    "village-quests-justfatlard": "*",
+    "player-portals-justfatlard": ">=1.1.6",
+    "big-boats-justfatlard": "*",
+    "redstone-photography": ">=1.1.10"
+  }
+}

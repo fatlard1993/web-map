@@ -1,0 +1,356 @@
+'use strict';
+
+// One map unit is one block, and at zoom 4 a pixel is a block: the tiles' native zoom. Past it the
+// tiles are enlarged, up to 16 pixels a block.
+const NATIVE = 4;
+const MOST = NATIVE + 4;
+const crs = L.extend({}, L.CRS.Simple, { transformation: new L.Transformation(1 / 16, 0, 1 / 16, 0) });
+const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attributionControl: false });
+map.setView([0, 0], NATIVE);
+
+const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', grid: 'Grid' };
+const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
+const SHOWN_BY_DEFAULT = { grid: false };
+const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos'];
+const touch = matchMedia('(hover: none)').matches;
+const narrow = matchMedia('(max-width: 600px)').matches;
+
+// Latitude is z and longitude is x, so north stays up as it does on an in-game map.
+const at = (x, z) => [z + 0.5, x + 0.5];
+const dot = kind => L.divIcon({ className: 'label ' + kind, html: '', iconSize: null });
+const titleOf = folder => DIMENSION_TITLES[folder] || folder;
+
+// Labels are set as text, never as HTML: player, portal and ship names are whatever players typed.
+function named(marker, text) {
+	marker.on('add', () => { marker.getElement().textContent = text; });
+	return marker;
+}
+
+const kept = {
+	get(key, fallback) { try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); } catch (e) { return fallback; } },
+	set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* not kept */ } }
+};
+
+async function json(name) {
+	const response = await fetch(name + '?' + Date.now());
+	return response.ok ? response.json() : null;
+}
+
+// --- Where you are looking ---
+
+const where = document.getElementById('where');
+const showWhere = latlng => { where.textContent = 'x ' + Math.floor(latlng.lng) + ', z ' + Math.floor(latlng.lat); };
+if (touch) {
+	document.getElementById('crosshair').hidden = false;
+	map.on('move', () => showWhere(map.getCenter()));
+	showWhere(map.getCenter());
+} else {
+	map.on('mousemove', e => showWhere(e.latlng));
+}
+
+const hint = document.getElementById('hint');
+if (!kept.get('web-map hint dismissed', false)) hint.hidden = false;
+document.getElementById('hint-close').addEventListener('click', () => { hint.hidden = true; kept.set('web-map hint dismissed', true); });
+
+// --- Dimensions and tiles ---
+
+let dimension = 'minecraft_overworld';
+let tilesStamp = 0;
+const tileLayers = {};
+const tileUrl = folder => 'tiles/' + folder + '/{z}/{x}_{y}.png?v=' + tilesStamp;
+function tilesFor(folder) {
+	const layer = L.tileLayer(tileUrl(folder), {
+		tileSize: 512, minZoom: 0, maxZoom: MOST, maxNativeZoom: NATIVE, noWrap: true, className: 'pixelated'
+	});
+	layer.folder = folder;
+	tileLayers[folder] = layer;
+	return layer;
+}
+
+// Tiles are cached like any image, so the page asks again only when the server says it drew something.
+async function refreshTiles() {
+	const version = await json('version.json').catch(() => null);
+	if (!version || !version.tiles || version.tiles === tilesStamp) return;
+	tilesStamp = version.tiles;
+	for (const folder in tileLayers) tileLayers[folder].setUrl(tileUrl(folder));
+}
+
+// --- Layers, shown or hidden per viewer; the server decides which exist at all ---
+
+const shown = kept.get('web-map layers', {});
+const showing = key => key in shown ? shown[key] : (SHOWN_BY_DEFAULT[key] ?? true);
+const layers = {};
+const control = L.control.layers(null, null, { collapsed: touch || narrow, position: 'topright' }).addTo(map);
+map.on('overlayadd', e => { shown[e.layer.key] = true; kept.set('web-map layers', shown); });
+map.on('overlayremove', e => { shown[e.layer.key] = false; kept.set('web-map layers', shown); });
+map.on('baselayerchange', e => {
+	dimension = e.layer.folder;
+	kept.set('web-map dimension', dimension);
+	refreshMarkers();
+	refreshPlayers();
+});
+
+function offer(key, layer = L.layerGroup()) {
+	layer.key = key;
+	layers[key] = layer;
+	control.addOverlay(layer, TITLES[key]);
+	if (showing(key)) layer.addTo(map);
+}
+
+// Chunk lines once a chunk is at least eight pixels across, region lines always, and region numbers
+// once a region is at least 96 pixels across.
+const CHUNK_LINES_FROM = 8;
+const REGION_NUMBERS_FROM = 96;
+const Grid = L.GridLayer.extend({
+	createTile(coords) {
+		const tile = document.createElement('canvas');
+		const size = this.getTileSize();
+		tile.width = size.x;
+		tile.height = size.y;
+		const context = tile.getContext('2d');
+		const blocks = size.x * 16 / Math.pow(2, coords.z);
+		const scale = size.x / blocks;
+		const x0 = coords.x * blocks, z0 = coords.y * blocks;
+		const lines = (step, style) => {
+			context.strokeStyle = style;
+			context.beginPath();
+			for (let b = Math.ceil(x0 / step) * step; b < x0 + blocks; b += step) {
+				const px = Math.round((b - x0) * scale) + 0.5;
+				context.moveTo(px, 0); context.lineTo(px, size.y);
+			}
+			for (let b = Math.ceil(z0 / step) * step; b < z0 + blocks; b += step) {
+				const pz = Math.round((b - z0) * scale) + 0.5;
+				context.moveTo(0, pz); context.lineTo(size.x, pz);
+			}
+			context.stroke();
+		};
+		if (16 * scale >= CHUNK_LINES_FROM) lines(16, 'rgba(255, 255, 255, 0.18)');
+		lines(512, 'rgba(255, 255, 255, 0.55)');
+		if (512 * scale >= REGION_NUMBERS_FROM) {
+			context.font = '11px ui-monospace, monospace';
+			context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+			context.shadowColor = '#000';
+			context.shadowBlur = 2;
+			for (let bx = Math.ceil(x0 / 512) * 512; bx < x0 + blocks; bx += 512) {
+				for (let bz = Math.ceil(z0 / 512) * 512; bz < z0 + blocks; bz += 512) {
+					context.fillText('r ' + bx / 512 + ', ' + bz / 512, (bx - x0) * scale + 4, (bz - z0) * scale + 13);
+				}
+			}
+		}
+		return tile;
+	}
+});
+
+// --- Markers ---
+
+const here = list => (list || []).filter(item => item.dimension === dimension);
+const PHOTO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const photoCaption = photo => [photo.by ? 'By ' + photo.by : '', photo.taken ? new Date(photo.taken).toLocaleString() : '']
+	.filter(Boolean).join(', ');
+
+// The photo filling the window, over the map. A spot with several photos steps through them with the
+// arrows or the arrow keys; a tap elsewhere, the close button or Escape puts it away.
+const viewer = document.getElementById('viewer');
+const viewerImage = document.getElementById('viewer-image');
+const viewerPrevious = document.getElementById('viewer-previous');
+const viewerNext = document.getElementById('viewer-next');
+let viewing = null;
+let viewerOpener = null;
+
+function counted(photos, index) {
+	const caption = photoCaption(photos[index]);
+	return photos.length > 1 ? (index + 1) + ' of ' + photos.length + (caption ? ': ' + caption : '') : caption;
+}
+
+function showInViewer() {
+	const { photos, index } = viewing;
+	viewerImage.src = 'photos/' + photos[index].id + '.png';
+	document.getElementById('viewer-caption').textContent = counted(photos, index);
+	viewerPrevious.hidden = viewerNext.hidden = photos.length < 2;
+}
+
+function enlarge(photos, index) {
+	viewing = { photos, index };
+	showInViewer();
+	viewerOpener = document.activeElement;
+	viewer.hidden = false;
+	document.getElementById('viewer-close').focus();
+}
+
+function stepViewer(by) {
+	if (!viewing || viewing.photos.length < 2) return;
+	viewing.index = (viewing.index + by + viewing.photos.length) % viewing.photos.length;
+	showInViewer();
+}
+
+function closeViewer() {
+	if (viewer.hidden) return;
+	viewer.hidden = true;
+	viewing = null;
+	viewerImage.removeAttribute('src');
+	if (viewerOpener && viewerOpener.focus) viewerOpener.focus();
+}
+
+viewer.addEventListener('click', closeViewer);
+viewerPrevious.addEventListener('click', e => { e.stopPropagation(); stepViewer(-1); });
+viewerNext.addEventListener('click', e => { e.stopPropagation(); stepViewer(1); });
+viewerImage.addEventListener('click', e => { if (viewing && viewing.photos.length > 1) { e.stopPropagation(); stepViewer(1); } });
+document.addEventListener('keydown', e => {
+	if (viewer.hidden) return;
+	if (e.key === 'Escape') closeViewer();
+	else if (e.key === 'ArrowLeft') stepViewer(-1);
+	else if (e.key === 'ArrowRight') stepViewer(1);
+});
+
+// Photos taken from the same block, as a camera block's always are, share one pin, newest first.
+function photoView(photos) {
+	let index = 0;
+	const view = document.createElement('div');
+	view.className = 'photo-view';
+	const image = document.createElement('img');
+	image.alt = 'Photo';
+	image.addEventListener('click', () => enlarge(photos, index));
+	const caption = document.createElement('p');
+	const show = () => {
+		image.src = 'photos/' + photos[index].id + '.png';
+		caption.textContent = counted(photos, index);
+	};
+	const button = (text, label, onClick) => {
+		const b = document.createElement('button');
+		b.type = 'button';
+		b.textContent = text;
+		if (label) b.setAttribute('aria-label', label);
+		b.addEventListener('click', onClick);
+		return b;
+	};
+	const steps = document.createElement('div');
+	steps.className = 'photo-steps';
+	if (photos.length > 1) {
+		steps.append(
+			button('\u2039', 'Previous photo', () => { index = (index - 1 + photos.length) % photos.length; show(); }),
+			button('\u203a', 'Next photo', () => { index = (index + 1) % photos.length; show(); }));
+	}
+	steps.append(button('View larger', null, () => enlarge(photos, index)));
+	show();
+	view.append(image, caption, steps);
+	return view;
+}
+
+async function refreshMarkers() {
+	if (!MARKER_LAYERS.some(key => layers[key])) return;
+	const markers = await json('markers.json').catch(() => null);
+	if (!markers) return;
+	for (const key of MARKER_LAYERS) if (layers[key]) layers[key].clearLayers();
+
+	if (layers.homes) {
+		for (const h of here(markers.homes)) named(L.marker(at(h.x, h.z), { icon: dot('home') }), h.name + "'s home").addTo(layers.homes);
+	}
+	if (layers.villages) {
+		for (const v of here(markers.villages)) {
+			if (v.radius > 0) {
+				L.circle(at(v.x, v.z), { radius: v.radius, color: '#7bd389', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(layers.villages);
+			}
+			named(L.marker(at(v.x, v.z), { icon: dot('village') }), v.name || 'Village').addTo(layers.villages);
+		}
+	}
+	if (layers.spawn && markers.spawn && markers.spawn.dimension === dimension) {
+		named(L.marker(at(markers.spawn.x, markers.spawn.z), { icon: dot('spawn') }), 'Spawn').addTo(layers.spawn);
+	}
+	if (layers.portals) {
+		for (const link of markers.portals || []) {
+			const name = link.name || 'Portal';
+			const color = link.color || '#b06cff';
+			const ends = [link.from, link.to].filter(end => end.dimension === dimension);
+			if (ends.length === 2) {
+				L.polyline(ends.map(end => at(end.x, end.z)),
+					{ color, weight: 2, opacity: 0.8, dashArray: link.bothWays ? '6 6' : '2 6', interactive: false }).addTo(layers.portals);
+			}
+			for (const end of ends) {
+				const other = end === link.from ? link.to : link.from;
+				const away = other.elsewhere ? 'elsewhere' : titleOf(other.dimension) + ' ' + other.x + ', ' + other.z;
+				const leadsAway = ends.length === 2 ? name : name + ' → ' + away;
+				const marker = named(L.marker(at(end.x, end.z), { icon: dot('portal') }), leadsAway);
+				marker.on('add', () => marker.getElement().style.setProperty('--portal', color));
+				marker.addTo(layers.portals);
+			}
+		}
+	}
+	if (layers.ships) {
+		for (const ship of here(markers.ships)) {
+			const text = (ship.name || 'A ship') + (ship.live ? '' : ' (last seen)');
+			named(L.marker(at(ship.x, ship.z), { icon: dot(ship.live ? 'ship' : 'ship away') }), text).addTo(layers.ships);
+		}
+	}
+	if (layers.photos) {
+		const spots = new Map();
+		for (const photo of here(markers.photos)) {
+			if (!PHOTO_ID.test(photo.id)) continue;
+			const key = photo.x + ',' + photo.z;
+			if (!spots.has(key)) spots.set(key, []);
+			spots.get(key).push(photo);
+		}
+		for (const photos of spots.values()) {
+			photos.sort((a, b) => (b.taken || 0) - (a.taken || 0));
+			const first = photos[0];
+			const text = photos.length > 1 ? photos.length + ' photos' : (first.by ? 'Photo by ' + first.by : 'Photo');
+			const marker = named(L.marker(at(first.x, first.z), { icon: dot('photo') }), text);
+			marker.bindPopup(() => photoView(photos), { maxWidth: 300 });
+			marker.addTo(layers.photos);
+		}
+	}
+}
+
+const playerMarkers = new Map();
+const elsewhere = document.getElementById('elsewhere');
+async function refreshPlayers() {
+	if (!layers.players) return;
+	const players = await json('players.json').catch(() => null);
+	if (!players) return;
+	const seen = new Set();
+	for (const p of here(players)) {
+		seen.add(p.name);
+		let marker = playerMarkers.get(p.name);
+		if (!marker) {
+			marker = named(L.marker(at(p.x, p.z), { icon: dot('player'), zIndexOffset: 1000 }), p.name);
+			playerMarkers.set(p.name, marker);
+			marker.addTo(layers.players);
+		}
+		marker.setLatLng(at(p.x, p.z));
+	}
+	for (const [name, marker] of playerMarkers) {
+		if (!seen.has(name)) { layers.players.removeLayer(marker); playerMarkers.delete(name); }
+	}
+	const away = players.filter(p => p.dimension !== dimension);
+	elsewhere.hidden = away.length === 0 || !map.hasLayer(layers.players);
+	elsewhere.textContent = 'Elsewhere: ' + away.map(p => p.name + ' (' + titleOf(p.dimension) + ')').join(', ');
+}
+
+// --- Start ---
+
+function start(meta) {
+	if (meta && meta.spawn) map.setView(at(meta.spawn.x, meta.spawn.z), NATIVE);
+	const folders = meta && meta.dimensions && meta.dimensions.length ? meta.dimensions : ['minecraft_overworld'];
+	const chosen = kept.get('web-map dimension', null);
+	dimension = folders.includes(chosen) ? chosen : folders[0];
+	for (const folder of folders) {
+		const layer = tilesFor(folder);
+		if (folders.length > 1) control.addBaseLayer(layer, titleOf(folder));
+	}
+	tileLayers[dimension].addTo(map);
+	refreshTiles();
+	setInterval(refreshTiles, 30000);
+
+	for (const key of (meta && meta.layers) || []) if (TITLES[key]) offer(key);
+	offer('grid', new Grid({ tileSize: 512, minZoom: 0, maxZoom: MOST, pane: 'overlayPane' }));
+	map.on('overlayadd overlayremove', refreshPlayers);
+	refreshMarkers();
+	setInterval(refreshMarkers, 30000);
+	if (layers.players) {
+		refreshPlayers();
+		setInterval(refreshPlayers, 5000);
+	}
+}
+
+json('meta.json').then(start).catch(() => start(null));

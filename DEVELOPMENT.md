@@ -1,0 +1,25 @@
+# Web Map - Development Guide
+
+For what the mod is and how it works, see [README.md](README.md).
+
+## Installation
+
+Install on the server alongside Fabric API (see `fabric.mod.json`); clients need nothing. Version targets live in `gradle.properties` (Minecraft, loader, Fabric API) and `fabric.mod.json` (Java).
+
+## Building
+
+The village, portal, ship and photo layers compile against their mods' jars, so `village-quests`, `player-portals`, `big-boats` and `redstone-photography` must be checked out and built beside this one (`mc-build <mod>`). The build says which is missing if one is.
+
+```
+./gradlew build
+```
+
+## Trying it
+
+`./gradlew runServer` starts a server in `run/`. With nobody connected almost no chunks load, so load some from the console, for example `forceload add -100 -100 100 100`; a `fill` high above them shows a change reaching the map within seconds. To try the integrated layers, put the built jars of Pandorical and the four mods above in `run/mods/`.
+
+Open the map through a local web server, since the page fetches its tiles, which a browser refuses from a `file:` address:
+
+```
+cd run/web-map && python3 -m http.server 8000
+```
