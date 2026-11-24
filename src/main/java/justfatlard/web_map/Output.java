@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -36,13 +37,19 @@ final class Output {
 
 	/** Runs on the writer thread; an exception is logged, never thrown into the caller. */
 	void later(String what, IoTask task) {
-		writer.execute(() -> {
+		Runnable run = () -> {
 			try {
 				task.run();
 			} catch (Exception e) {
 				LOGGER.warn("Could not {}", what, e);
 			}
-		});
+		};
+		try {
+			writer.execute(run);
+		} catch (RejectedExecutionException closing) {
+			// Queued while the server stops, by a write still finishing: done here rather than dropped
+			run.run();
+		}
 	}
 
 	void writeLater(String name, String content) {
