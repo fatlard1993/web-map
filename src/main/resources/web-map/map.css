@@ -49,8 +49,10 @@ html, body, #map { height: 100%; margin: 0; background: var(--bg); }
 	font-size: 32px; line-height: 1; padding: 8px; cursor: pointer;
 }
 
-.label { color: var(--fg); font-size: 12px; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 2px #000; }
-.label::before {
+.label { color: var(--fg); font-size: 12px; line-height: 17px; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 2px #000; }
+/* The dot sits on its block; text, or a stack's lines, run right and down from it */
+.label { margin: -8.5px 0 0 -4px; }
+.label::before, .line::before {
 	content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: -1px;
 	border-radius: 50%; background: var(--dot); box-shadow: 0 0 0 2px #000;
 }
@@ -67,6 +69,17 @@ html, body, #map { height: 100%; margin: 0; background: var(--bg); }
 .ship.away { opacity: 0.55; font-style: italic; }
 .photo { --dot: #f2f2f2; cursor: pointer; }
 .photo::before { border-radius: 2px; width: 10px; height: 8px; box-shadow: 0 0 0 2px #000, inset 0 0 0 2px #555; }
+.acts { cursor: pointer; }
+.line.acts:hover { text-decoration: underline; }
+
+/* Labels that would overlap: one lists them all, the rest keep only their dots */
+.muted::before { margin-right: 0; }
+.stack { font-weight: normal; font-style: normal; opacity: 1; cursor: default; }
+.stack::before { display: none; }
+.line { cursor: zoom-in; }
+.line.more { color: #bbb; }
+.line.more::before { visibility: hidden; }
+
 .whole-map { position: relative; }
 .whole-map::before {
 	content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -7px 0 0 -7px;

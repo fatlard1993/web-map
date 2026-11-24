@@ -24,8 +24,19 @@ const dot = kind => L.divIcon({ className: 'label ' + kind, html: '', iconSize: 
 const titleOf = folder => DIMENSION_TITLES[folder] || folder;
 
 // Labels are set as text, never as HTML: player, portal and ship names are whatever players typed.
-function named(marker, text) {
-	marker.on('add', () => { marker.getElement().textContent = text; });
+// What a click does, if anything, is act: also run from the label's line when it is stacked.
+function named(marker, text, act = null) {
+	marker.label = { text, kind: marker.options.icon.options.className.replace(/^label /, ''), act };
+	marker.options.baseZ = marker.options.zIndexOffset;
+	if (act) marker.on('click', act);
+	marker.on('add', () => {
+		labelled.add(marker);
+		marker.shownAs = null;
+		marker.getElement().textContent = text;
+		if (act) marker.getElement().classList.add('acts');
+		declutterSoon();
+	});
+	marker.on('remove', () => { labelled.delete(marker); declutterSoon(); });
 	return marker;
 }
 
@@ -190,6 +201,132 @@ const Grid = L.GridLayer.extend({
 	}
 });
 
+// --- Labels that would overlap share one stack ---
+
+// Labels whose boxes touch are gathered under the first of them by rank, which lists them all; the
+// rest keep only their dots, so where each one is stays visible. A stack shows a few names and how
+// many more, unless the map is in as far as it goes. Its lines act as their labels would, and any
+// other line zooms in on the stack, which spreads it apart.
+const labelled = new Set();
+const RANK = ['spawn', 'player', 'village', 'portal', 'ship', 'home', 'photo'];
+const LINE = 17;
+const STACK_SHOWS = 5;
+const measure = document.createElement('canvas').getContext('2d');
+const widths = new Map();
+const rankOf = item => { const r = RANK.indexOf(item.marker.label.kind.split(' ')[0]); return r < 0 ? RANK.length : r; };
+
+function widthOf(label) {
+	const key = label.kind + '|' + label.text;
+	if (!widths.has(key)) {
+		measure.font = (label.kind === 'village' ? '600 ' : '') + '12px system-ui, sans-serif';
+		widths.set(key, Math.ceil(measure.measureText(label.text).width) + 12);
+		if (widths.size > 5000) widths.clear();
+	}
+	return widths.get(key);
+}
+
+const stackShows = members => map.getZoom() >= MOST || members.length <= STACK_SHOWS ? members.length : STACK_SHOWS - 1;
+const moreText = hidden => '+' + hidden + ' more';
+
+// The dot sits on its block, with the text, or the stack's lines, running right and down from it.
+function boxOf(group) {
+	const shows = stackShows(group.members);
+	let width = 0;
+	for (let i = 0; i < shows; i++) width = Math.max(width, group.members[i].width);
+	if (shows < group.members.length) width = Math.max(width, widthOf({ kind: '', text: moreText(group.members.length - shows) }));
+	const lines = shows + (shows < group.members.length ? 1 : 0);
+	const p = group.members[0].point;
+	return { left: p.x - 6, top: p.y - LINE / 2, right: p.x - 4 + width + 2, bottom: p.y - LINE / 2 + lines * LINE };
+}
+
+const overlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+let declutterPending = false;
+function declutterSoon() {
+	if (declutterPending) return;
+	declutterPending = true;
+	requestAnimationFrame(() => { declutterPending = false; declutter(); });
+}
+
+function declutter() {
+	const zoom = map.getZoom();
+	const items = [];
+	for (const marker of labelled) {
+		if (map.hasLayer(marker)) items.push({ marker, point: map.project(marker.getLatLng(), zoom), width: widthOf(marker.label) });
+	}
+	items.sort((a, b) => rankOf(a) - rankOf(b) || a.marker.label.text.localeCompare(b.marker.label.text));
+	let groups = items.map(item => ({ members: [item] }));
+	// A stack grows down as it gathers, and may come to cover labels it missed, so go round again until none touch
+	for (let merged = true; merged;) {
+		merged = false;
+		const placed = [];
+		for (const group of groups) {
+			const box = boxOf(group);
+			const into = placed.find(other => overlap(boxOf(other), box));
+			if (into) { into.members.push(...group.members); merged = true; } else placed.push(group);
+		}
+		groups = placed;
+	}
+	for (const group of groups) {
+		const [first, ...rest] = group.members.map(item => item.marker);
+		showStack(first, group.members.length > 1 ? group.members.map(item => item.marker) : null);
+		for (const marker of rest) showMuted(marker);
+	}
+}
+
+function showMuted(marker) {
+	if (marker.shownAs === 'muted') return;
+	marker.shownAs = 'muted';
+	const element = marker.getElement();
+	element.classList.remove('stack');
+	element.classList.add('muted');
+	element.textContent = '';
+	element.title = marker.label.text;
+	marker.setZIndexOffset(marker.options.baseZ);
+}
+
+function showStack(marker, members) {
+	const element = marker.getElement();
+	element.title = marker.options.title;
+	if (!members) {
+		if (marker.shownAs === 'alone') return;
+		marker.shownAs = 'alone';
+		element.classList.remove('stack', 'muted');
+		element.textContent = marker.label.text;
+		marker.setZIndexOffset(marker.options.baseZ);
+		return;
+	}
+	const shows = stackShows(members);
+	const shownAs = members.slice(0, shows).map(m => L.stamp(m)).join(',') + '/' + members.length;
+	if (marker.shownAs === shownAs) return;
+	marker.shownAs = shownAs;
+	element.classList.remove('muted');
+	element.classList.add('stack');
+	element.textContent = '';
+	const spread = () => {
+		const bounds = L.latLngBounds(members.map(m => m.getLatLng()));
+		const target = Math.min(MOST, Math.max(map.getZoom() + 1, map.getBoundsZoom(bounds, false, L.point(80, 80))));
+		map.setView(bounds.getCenter(), target);
+	};
+	const line = (kind, text, onClick, style) => {
+		const div = document.createElement('div');
+		div.className = 'line ' + kind;
+		div.textContent = text;
+		if (kind.includes('portal') && kind.includes('acts')) div.title = 'Go to the other end';
+		if (style) div.style.setProperty('--portal', style);
+		L.DomEvent.on(div, 'click', e => { L.DomEvent.stop(e); onClick(); });
+		L.DomEvent.on(div, 'dblclick mousedown touchstart', L.DomEvent.stopPropagation);
+		element.append(div);
+	};
+	for (const m of members.slice(0, shows)) {
+		line(m.label.kind + (m.label.act ? ' acts' : ''), m.label.text, m.label.act || spread, m.label.portal);
+	}
+	if (shows < members.length) line('more', moreText(members.length - shows), spread);
+	marker.setZIndexOffset(3000);
+}
+
+map.on('zoomend', declutterSoon);
+
 // --- Markers ---
 
 const here = list => (list || []).filter(item => item.dimension === dimension);
@@ -320,6 +457,7 @@ async function refreshMarkers() {
 				const away = other.elsewhere ? 'elsewhere' : titleOf(other.dimension) + ' ' + other.x + ', ' + other.z;
 				const leadsAway = ends.length === 2 ? name : name + ' → ' + away;
 				const marker = named(L.marker(at(end.x, end.z), { icon: dot('portal') }), leadsAway);
+				marker.label.portal = color;
 				marker.on('add', () => marker.getElement().style.setProperty('--portal', color));
 				marker.addTo(layers.portals);
 			}
@@ -345,6 +483,7 @@ async function refreshMarkers() {
 			const text = photos.length > 1 ? photos.length + ' photos' : (first.by ? 'Photo by ' + first.by : 'Photo');
 			const marker = named(L.marker(at(first.x, first.z), { icon: dot('photo') }), text);
 			marker.bindPopup(() => photoView(photos), { maxWidth: 300 });
+			marker.label.act = () => marker.openPopup();
 			marker.addTo(layers.photos);
 		}
 	}
@@ -367,6 +506,7 @@ async function refreshPlayers() {
 		}
 		marker.setLatLng(at(p.x, p.z));
 	}
+	declutterSoon();
 	for (const [name, marker] of playerMarkers) {
 		if (!seen.has(name)) { layers.players.removeLayer(marker); playerMarkers.delete(name); }
 	}
