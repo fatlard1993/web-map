@@ -11,7 +11,7 @@ const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attribut
 map.setView([0, 0], NATIVE);
 
 const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
-	portals: 'Portal links', ships: 'Ships', photos: 'Photos', grid: 'Grid' };
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', border: 'World border', daylight: 'Day and night', grid: 'Grid' };
 const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
 const SHOWN_BY_DEFAULT = { grid: false };
 const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos'];
@@ -147,6 +147,8 @@ map.on('baselayerchange', e => {
 	fitZoomOut();
 	refreshMarkers();
 	refreshPlayers();
+	if (layers.daylight) layers.daylight.show();
+	showBorder();
 });
 
 function offer(key, layer = L.layerGroup()) {
@@ -837,6 +839,63 @@ map.on('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && viewer.hidden) stopMeasuring(); });
 
+// --- The world: the overworld's time of day, shading the map, and each dimension's border ---
+
+// The game counts a day as 24000 ticks from sunrise; night falls around 12000 and lifts around 23000.
+const NIGHT = 0.55;
+const clock = document.getElementById('clock');
+let lastWorld = {};
+
+function darkness(time) {
+	if (time < 11500) return 0;
+	if (time < 13500) return NIGHT * (time - 11500) / 2000;
+	if (time < 22500) return NIGHT;
+	return NIGHT * (24000 - time) / 1500;
+}
+
+const hoursOf = time => {
+	const minutes = Math.floor(((time + 6000) % 24000) * 1440 / 24000);
+	return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+};
+
+map.createPane('daylight').style.zIndex = 250;
+const Daylight = L.Layer.extend({
+	onAdd() {
+		this.shade = L.DomUtil.create('div', 'daylight', map.getPanes().daylight);
+		this.show();
+	},
+	onRemove() {
+		this.shade.remove();
+		clock.hidden = true;
+	},
+	// Only the overworld has days, and the shade covers the view wherever the map is moved
+	show() {
+		if (!this.shade) return;
+		const time = lastWorld.time;
+		const shown = time !== undefined && dimension === 'minecraft_overworld';
+		this.shade.style.opacity = shown ? darkness(time) : 0;
+		clock.hidden = time === undefined;
+		if (time !== undefined) clock.textContent = (darkness(time) > NIGHT / 2 ? 'Night, ' : 'Day, ') + hoursOf(time);
+	}
+});
+
+function showBorder() {
+	if (!layers.border) return;
+	layers.border.clearLayers();
+	const edges = lastWorld.borders && lastWorld.borders[dimension];
+	if (!edges) return;
+	L.rectangle([[edges.z0, edges.x0], [edges.z1, edges.x1]],
+		{ color: '#ff5c5c', weight: 2, dashArray: '8 6', fill: false, interactive: false }).addTo(layers.border);
+}
+
+async function refreshWorld() {
+	const world = await json('world.json').catch(() => null);
+	if (!world) return;
+	lastWorld = world;
+	if (layers.daylight) layers.daylight.show();
+	showBorder();
+}
+
 // --- Start ---
 
 function start(meta) {
@@ -857,7 +916,14 @@ function start(meta) {
 	refreshTiles();
 	setInterval(refreshTiles, 30000);
 
-	for (const key of (meta && meta.layers) || []) if (TITLES[key]) offer(key);
+	for (const key of (meta && meta.layers) || []) {
+		if (key === 'daylight') offer(key, new Daylight());
+		else if (TITLES[key]) offer(key);
+	}
+	if (layers.border || layers.daylight) {
+		refreshWorld();
+		setInterval(refreshWorld, 5000);
+	}
 	offer('grid', new Grid({ tileSize: 512, minZoom: FARTHEST, maxZoom: MOST, pane: 'overlayPane' }));
 	map.on('overlayadd overlayremove', refreshPlayers);
 	refreshMarkers();

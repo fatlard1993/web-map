@@ -28,7 +28,8 @@ import java.util.function.Supplier;
 
 /**
  * What the page shows over the map: players, homes, villages, spawn, portal links, ships and photos,
- * as {@code players.json} and {@code markers.json}, and what it offers, as {@code meta.json}. Only
+ * as {@code players.json} and {@code markers.json}; the time of day and each dimension's world border,
+ * as {@code world.json}; and what it offers, as {@code meta.json}. Only
  * dimensions the server draws are ever written, whatever a layer would otherwise show.
  *
  * <p>Built on the server thread, written on the writer's.
@@ -68,6 +69,7 @@ final class Layers {
 
 		writeMeta(server);
 		if (!config.players) output.writeLater("players.json", "[]");
+		writeWorld(server);
 		scanSavedHomes(server);
 		refreshPhotos(server);
 		writeMarkers(server);
@@ -75,6 +77,7 @@ final class Layers {
 
 	void tick(MinecraftServer server, int ticks) {
 		if (ticks % PLAYERS_TICKS == 0 && config.players) writePlayers(server);
+		if (ticks % PLAYERS_TICKS == 0 && (config.border || config.daylight)) writeWorld(server);
 		if (ticks % SAVED_HOMES_TICKS == 1) scanSavedHomes(server);
 		if (ticks % MARKERS_TICKS == 2) {
 			refreshPhotos(server);
@@ -136,6 +139,28 @@ final class Layers {
 			players.add(entry);
 		}
 		output.writeLater("players.json", GSON.toJson(players));
+	}
+
+	/** The overworld's time of day, 0 at sunrise as the game counts it, and each drawn dimension's border. */
+	private void writeWorld(MinecraftServer server) {
+		JsonObject world = new JsonObject();
+		if (config.daylight) world.addProperty("time", Math.floorMod(server.overworld().getOverworldClockTime(), 24000L));
+		if (config.border) {
+			JsonObject borders = new JsonObject();
+			for (ServerLevel level : server.getAllLevels()) {
+				String dimension = Dimensions.folder(level.dimension());
+				if (!drawnFolders.contains(dimension)) continue;
+				var border = level.getWorldBorder();
+				JsonObject edges = new JsonObject();
+				edges.addProperty("x0", Math.floor(border.getMinX()));
+				edges.addProperty("z0", Math.floor(border.getMinZ()));
+				edges.addProperty("x1", Math.ceil(border.getMaxX()));
+				edges.addProperty("z1", Math.ceil(border.getMaxZ()));
+				borders.add(dimension, edges);
+			}
+			world.add("borders", borders);
+		}
+		output.writeLater("world.json", GSON.toJson(world));
 	}
 
 	private void writeMarkers(MinecraftServer server) {
