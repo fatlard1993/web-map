@@ -158,6 +158,13 @@ final class Layers {
 		JsonArray caves = new JsonArray();
 		for (String id : config.caveDimensions()) caves.add(Dimensions.folder(id));
 		meta.add("caves", caves);
+		// Every drawn dimension without a roof over it may have sky builds, whose ground is drawn beside it
+		JsonArray sky = new JsonArray();
+		for (ServerLevel level : server.getAllLevels()) {
+			String folder = Dimensions.folder(level.dimension());
+			if (drawnFolders.contains(folder) && !level.dimensionType().hasCeiling()) sky.add(folder);
+		}
+		meta.add("sky", sky);
 		output.writeLater("meta.json", GSON.toJson(meta));
 	}
 

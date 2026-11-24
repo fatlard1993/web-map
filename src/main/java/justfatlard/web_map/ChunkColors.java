@@ -3,6 +3,7 @@ package justfatlard.web_map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.BlockGetter;
@@ -63,16 +64,25 @@ final class ChunkColors {
 	 * A chunk's colours and what is in it, the heights along its south edge, which the chunk south of
 	 * it is shaded against, and the signs and beacons in it.
 	 */
-	record Drawn(int[] colors, Info info, int[] southEdge, List<Marks.Mark> marks, int[] caves) {
+	/**
+	 * @param under the ground under sky builds, where a column has one, and nothing elsewhere; null when
+	 *              no column of the chunk has a sky build
+	 */
+	record Drawn(int[] colors, Info info, int[] southEdge, List<Marks.Mark> marks, int[] caves, int[] under) {
 		Drawn withMarks(List<Marks.Mark> found) {
-			return new Drawn(colors, info, southEdge, found, caves);
+			return new Drawn(colors, info, southEdge, found, caves, under);
 		}
 
 		/** @param drawn the cave view's colours, or null where caves are not drawn */
 		Drawn withCaves(int[] drawn) {
-			return new Drawn(colors, info, southEdge, marks, drawn);
+			return new Drawn(colors, info, southEdge, marks, drawn, under);
 		}
 	}
+
+	/** Open air under something before it counts as built in the sky: more than any tree or room is tall. */
+	private static final int SKY_GAP = 16;
+	/** The thickest a sky build is looked through for its underside; below that it is ground. */
+	private static final int SKY_BUILD_THICKEST = 32;
 
 	/** Solid blocks over an opening before it counts as a cave: more than a roof, so a house is not one. */
 	private static final int CAVE_ROOF = 3;
@@ -152,38 +162,95 @@ final class ChunkColors {
 	 */
 	static Drawn draw(Blocks blocks, BlockGetter getter, int slice, int minY, int baseX, int baseZ, int[] northEdge) {
 		int[] colors = new int[256];
+		int[] under = new int[256];
+		boolean anyUnder = false;
 		Info info = Info.empty();
 		int[] southEdge = new int[16];
 		BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
 		for (int x = 0; x < 16; x++) {
-			int previous = Integer.MIN_VALUE;
-			if (northEdge != null) previous = northEdge[x];
+			// The ground view is shaded against its own heights, which differ from the surface's under a sky build
+			int previous = Integer.MIN_VALUE, previousGround = Integer.MIN_VALUE;
+			if (northEdge != null) previous = previousGround = northEdge[x];
 			for (int z = 0; z < 16; z++) {
 				Column column = column(blocks, getter, baseX + x, baseZ + z, minY, slice, cursor);
+				Column ground = slice == Integer.MAX_VALUE ? groundUnder(blocks, getter, baseX + x, baseZ + z, minY, column, cursor) : null;
+				Column seenFromBelow = ground != null ? ground : column;
 				if (previous == Integer.MIN_VALUE) previous = column.height;
+				if (previousGround == Integer.MIN_VALUE) previousGround = seenFromBelow.height;
 				if (z == 15) southEdge[x] = column.height;
-				if (column.color == MapColor.NONE) {
-					previous = column.height;
-					continue;
+				if (column.color != MapColor.NONE) {
+					describe(info, z * 16 + x, blocks, baseX + x, column.height, baseZ + z, minY);
+					colors[z * 16 + x] = shade(column, previous, x, z);
 				}
-				describe(info, z * 16 + x, blocks, baseX + x, column.height, baseZ + z, minY);
-
-				MapColor.Brightness brightness;
-				if (column.waterDepth > 0) {
-					double shade = column.waterDepth * 0.1 + ((x + z) & 1) * 0.2;
-					brightness = shade < 0.5 ? MapColor.Brightness.HIGH
-						: shade > 0.9 ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
-				} else {
-					double slope = (column.height - previous) * 0.8 + (((x + z) & 1) - 0.5) * 0.4;
-					brightness = slope > 0.6 ? MapColor.Brightness.HIGH
-						: slope < -0.6 ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
+				if (ground != null && ground.color != MapColor.NONE) {
+					under[z * 16 + x] = shade(ground, previousGround, x, z);
+					anyUnder = true;
 				}
-				colors[z * 16 + x] = 0xFF000000 | column.color.calculateARGBColor(brightness);
 				previous = column.height;
+				previousGround = seenFromBelow.height;
 			}
 		}
-		return new Drawn(colors, info, southEdge, List.of(), null);
+		return new Drawn(colors, info, southEdge, List.of(), null, anyUnder ? under : null);
+	}
+
+	/** A column's colour, lighter or darker by its height against the one north of it, or by its water's depth. */
+	private static int shade(Column column, int previous, int x, int z) {
+		MapColor.Brightness brightness;
+		if (column.waterDepth > 0) {
+			double shade = column.waterDepth * 0.1 + ((x + z) & 1) * 0.2;
+			brightness = shade < 0.5 ? MapColor.Brightness.HIGH
+				: shade > 0.9 ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
+		} else {
+			double slope = (column.height - previous) * 0.8 + (((x + z) & 1) - 0.5) * 0.4;
+			brightness = slope > 0.6 ? MapColor.Brightness.HIGH
+				: slope < -0.6 ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
+		}
+		return 0xFF000000 | column.color.calculateARGBColor(brightness);
+	}
+
+	/**
+	 * The ground under a column's sky build, or null when it has none. A sky build is something with at
+	 * least {@link #SKY_GAP} blocks of open air under it and ground below that, such as a cloud kingdom or
+	 * a floating base. Two things that look the same are not: leaves, so a tall canopy stays, and a roof
+	 * of natural terrain, which is a cave's ceiling inside a mountain rather than a build. One with no
+	 * ground below it at all, an End island over the void, is itself the ground.
+	 *
+	 * <p>Asked of every column on the server thread, so a top of water or natural terrain, which is nearly
+	 * every column, is ground at once, and nothing thicker than {@link #SKY_BUILD_THICKEST} is looked through.
+	 */
+	private static Column groundUnder(Blocks blocks, BlockGetter getter, int x, int z, int minY, Column top, BlockPos.MutableBlockPos cursor) {
+		Column current = top;
+		boolean skipped = false;
+		while (current.color != MapColor.NONE) {
+			BlockState topState = blocks.at(x, current.height, z);
+			if (topState.is(BlockTags.LEAVES) || !topState.getFluidState().isEmpty() || isNaturalCeiling(topState)) break;
+			// Down through the build to its underside, then the open air under it
+			int y = current.height, thickest = current.height - SKY_BUILD_THICKEST;
+			while (y > minY && y > thickest && !isOpen(blocks.at(x, y - 1, z))) y--;
+			if (y <= minY || y <= thickest || isNaturalCeiling(blocks.at(x, y, z))) break;
+			int gap = 0;
+			while (y - 1 > minY && isOpen(blocks.at(x, y - 1, z))) {
+				y--;
+				gap++;
+			}
+			if (gap < SKY_GAP || y - 1 <= minY) break;
+			current = columnFrom(blocks, getter, x, z, minY, y, cursor);
+			skipped = true;
+		}
+		return skipped ? current : null;
+	}
+
+	/** What a cave's ceiling is made of, as nobody builds with it in the sky: stone, dirt, sand, ores, ice. */
+	private static boolean isNaturalCeiling(BlockState state) {
+		return state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.BASE_STONE_NETHER) || state.is(BlockTags.DIRT)
+			|| state.is(BlockTags.SAND) || state.is(BlockTags.TERRACOTTA) || state.is(BlockTags.ICE) || state.is(BlockTags.SNOW)
+			|| state.is(BlockTags.IRON_ORES) || state.is(BlockTags.GOLD_ORES) || state.is(BlockTags.COPPER_ORES)
+			|| BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().endsWith("_ore")
+			|| state.is(net.minecraft.world.level.block.Blocks.GRAVEL) || state.is(net.minecraft.world.level.block.Blocks.CLAY)
+			|| state.is(net.minecraft.world.level.block.Blocks.SANDSTONE) || state.is(net.minecraft.world.level.block.Blocks.RED_SANDSTONE)
+			|| state.is(net.minecraft.world.level.block.Blocks.CALCITE) || state.is(net.minecraft.world.level.block.Blocks.DRIPSTONE_BLOCK)
+			|| state.is(net.minecraft.world.level.block.Blocks.POINTED_DRIPSTONE) || state.is(net.minecraft.world.level.block.Blocks.AMETHYST_BLOCK);
 	}
 
 	private static void describe(Info info, int index, Blocks blocks, int x, int y, int z, int minY) {
@@ -270,6 +337,11 @@ final class ChunkColors {
 			while (y > minY && colorOf(blocks.at(x, y - 1, z), getter, cursor.set(x, y - 1, z)) != MapColor.NONE) y--;
 			if (y <= minY) return new Column(colorOf(blocks.at(x, top, z), getter, cursor.set(x, top, z)), top, 0);
 		}
+		return columnFrom(blocks, getter, x, z, minY, y, cursor);
+	}
+
+	/** The column from just above y down: its first block with a map colour, and its water's depth. */
+	private static Column columnFrom(Blocks blocks, BlockGetter getter, int x, int z, int minY, int y, BlockPos.MutableBlockPos cursor) {
 		MapColor color = MapColor.NONE;
 		while (y > minY) {
 			y--;

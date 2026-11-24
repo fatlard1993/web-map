@@ -77,6 +77,10 @@ final class Drawing {
 		return dimension + ".caves";
 	}
 
+	static String underOf(String dimension) {
+		return dimension + ".under";
+	}
+
 	void loaded(ServerLevel level, LevelChunk chunk) {
 		if (!draws(level)) return;
 		ChunkPos pos = chunk.getPos();
@@ -179,7 +183,7 @@ final class Drawing {
 		ChunkColors.Drawn drawn = ChunkColors.of(level, chunk, false);
 		ChunkColors.Info about = drawn.info();
 		int hash = Objects.hash(Arrays.hashCode(drawn.colors()), Arrays.hashCode(about.tops()), Arrays.hashCode(about.grounds()),
-			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()), drawn.marks());
+			Arrays.hashCode(about.biomes()), Arrays.hashCode(about.heights()), drawn.marks(), Arrays.hashCode(drawn.under()));
 		Long2IntMap colours = drawnColours.computeIfAbsent(level, l -> new Long2IntOpenHashMap());
 		if (colours.containsKey(pos) && colours.get(pos) == hash) return;
 		colours.put(pos, hash);
@@ -205,6 +209,9 @@ final class Drawing {
 		}
 		tiles.paint(dimension, x, z, drawn.colors());
 		if (drawn.caves() != null) tiles.paint(cavesOf(dimension), x, z, drawn.caves());
+		// The ground under sky builds is its own tiles, drawn only where there are any, so most of the world has none
+		if (drawn.under() != null) tiles.paint(underOf(dimension), x, z, drawn.under());
+		else tiles.erase(underOf(dimension), x, z);
 		info.paint(dimension, x, z, drawn.info());
 		marks.drawn(dimension, x, z, drawn.marks());
 	}
@@ -217,6 +224,7 @@ final class Drawing {
 	private void blank(String dimension, int x, int z) throws java.io.IOException {
 		tiles.erase(dimension, x, z);
 		tiles.erase(cavesOf(dimension), x, z);
+		tiles.erase(underOf(dimension), x, z);
 		info.erase(dimension, x, z);
 		marks.drawn(dimension, x, z, java.util.List.of());
 	}

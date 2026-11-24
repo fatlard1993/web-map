@@ -30,6 +30,7 @@ The page can show, over the map:
 - **Deaths**, each player's last three, for 30 days, with the death message and height
 - **World border**
 - **Day and night**: the overworld darkens at night, with the time of day beside the coordinates
+- **Sky builds**, on until a viewer turns it off, which shows the ground under anything built in the sky, cloud kingdoms and floating bases, in its place: anything with 16 blocks or more of open air under it and ground below, except leaves and roofs of natural rock, which are canopies and caves
 - **Caves**, off until a viewer turns it on: the overworld's caves instead of its surface, the floor of the first opening under each spot, darker the deeper it is
 - **Grid**, region and chunk lines with region numbers, off until a viewer turns it on
 
@@ -63,7 +64,7 @@ If the file cannot be read, nothing is drawn and no layer is offered until it is
 Everything the page needs goes in `web-map/` in the server's folder, and nothing else does:
 
 - `index.html`, `map.js`, `map.css` and `leaflet/`, the page and the map library it runs on, put back at every start
-- `tiles/`, the map, in 512-pixel squares, from a pixel a block out to as far as it takes for everything drawn to fit in four; the caves are beside each dimension's, as `<dimension>.caves`
+- `tiles/`, the map, in 512-pixel squares, from a pixel a block out to as far as it takes for everything drawn to fit in four; the caves and the ground under sky builds are beside each dimension's, as `<dimension>.caves` and `<dimension>.under`
 - `info/`, what is in each column, for the page to say what a clicked spot is, and `info/palette.json`, the names its numbers stand for
 - `heads/`, players' faces
 - `meta.json`, what the server offers; `players.json` and `markers.json`, the layers; `world.json`, the time of day and world borders; `version.json`, when tiles last changed and how far each dimension's reach

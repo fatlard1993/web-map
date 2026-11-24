@@ -221,6 +221,34 @@ public class MapTests {
 		helper.succeed();
 	}
 
+	@GameTest(skyAccess = true)
+	public void theGroundUnderASkyBuildIsDrawnButNotUnderTreesOrCaveRoofs(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		// A platform of quartz far up, over a gold floor
+		helper.setBlock(new BlockPos(2, 1, 2), Blocks.GOLD_BLOCK);
+		helper.setBlock(new BlockPos(2, 30, 2), Blocks.QUARTZ_BLOCK);
+		helper.setBlock(new BlockPos(2, 31, 2), Blocks.QUARTZ_BLOCK);
+		// Leaves as high, which are a canopy, and stone, which is a cave's roof
+		helper.setBlock(new BlockPos(4, 1, 4), Blocks.GOLD_BLOCK);
+		helper.setBlock(new BlockPos(4, 30, 4), Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true));
+		helper.setBlock(new BlockPos(6, 1, 6), Blocks.GOLD_BLOCK);
+		helper.setBlock(new BlockPos(6, 30, 6), Blocks.STONE);
+		BlockPos build = helper.absolutePos(new BlockPos(2, 1, 2)), leaves = helper.absolutePos(new BlockPos(4, 1, 4)), roof = helper.absolutePos(new BlockPos(6, 1, 6));
+		int gold = Blocks.GOLD_BLOCK.defaultBlockState().getMapColor(level, build).calculateARGBColor(MapColor.Brightness.NORMAL);
+
+		ChunkColors.Drawn drawn = ChunkColors.of(level, level.getChunkAt(build), false);
+		int under = drawn.under() == null ? 0 : drawn.under()[(build.getZ() & 15) * 16 + (build.getX() & 15)];
+		helper.assertTrue(isColourOf(Blocks.GOLD_BLOCK, level, build, under), Component.literal("under the quartz, the gold floor, not " + Integer.toHexString(under)));
+		int surface = drawn.colors()[(build.getZ() & 15) * 16 + (build.getX() & 15)];
+		helper.assertTrue(isColourOf(Blocks.QUARTZ_BLOCK, level, build, surface), Component.literal("the surface still shows the quartz"));
+		for (BlockPos at : new BlockPos[] {leaves, roof}) {
+			ChunkColors.Drawn here = ChunkColors.of(level, level.getChunkAt(at), false);
+			int seen = here.under() == null ? 0 : here.under()[(at.getZ() & 15) * 16 + (at.getX() & 15)];
+			helper.assertTrue(seen == 0, Component.literal("leaves and stone overhead are not sky builds, but " + at + " has " + Integer.toHexString(seen)));
+		}
+		helper.succeed();
+	}
+
 	/** Whether one colour is the other dimmed: their channels in the same proportions, near enough. */
 	private static boolean sameHue(int seen, int full) {
 		int r = (seen >> 16) & 0xFF, g = (seen >> 8) & 0xFF, b = seen & 0xFF;
@@ -336,7 +364,7 @@ public class MapTests {
 		int[] stale = new int[256];
 		java.util.Arrays.fill(stale, 0xFFFF0000);
 		drawing.paintSaved(level, Dimensions.folder(level.dimension()), chunk.getPos().x(), chunk.getPos().z(),
-			new ChunkColors.Drawn(stale, ChunkColors.Info.empty(), new int[16], java.util.List.of(), null));
+			new ChunkColors.Drawn(stale, ChunkColors.Info.empty(), new int[16], java.util.List.of(), null, null));
 		drawing.flushNow().get(30, java.util.concurrent.TimeUnit.SECONDS);
 		output.close(30);
 
@@ -356,7 +384,7 @@ public class MapTests {
 		Output output = new Output(root);
 		Drawing drawing = new Drawing(output, Set.of(level.dimension().identifier().toString()), Set.of(level.dimension().identifier().toString()), root, extents -> { });
 		drawing.paintSaved(level, Dimensions.folder(level.dimension()), 1000000, 1000000,
-			new ChunkColors.Drawn(new int[256], ChunkColors.Info.empty(), new int[16], java.util.List.of(), null));
+			new ChunkColors.Drawn(new int[256], ChunkColors.Info.empty(), new int[16], java.util.List.of(), null, null));
 
 		boolean failed = false;
 		try {

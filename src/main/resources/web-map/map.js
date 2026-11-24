@@ -11,7 +11,7 @@ const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attribut
 map.setView([0, 0], NATIVE);
 
 const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
-	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', beacons: 'Beacons', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', caves: 'Caves', grid: 'Grid' };
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', signs: 'Signs', beacons: 'Beacons', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', sky: 'Sky builds', caves: 'Caves', grid: 'Grid' };
 const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
 const SHOWN_BY_DEFAULT = { grid: false, caves: false };
 const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'signs', 'beacons', 'deaths'];
@@ -86,14 +86,35 @@ function tilesFor(folder) {
 }
 
 // The cave view is a second set of tiles per dimension, <folder>.caves, laid over the surface's.
-const caveLayers = {};
+const overlayTiles = {};
 function cavesFor(folder) {
 	const caves = folder + '.caves';
-	caveLayers[caves] = L.tileLayer(tileUrl(caves), {
+	overlayTiles[caves] = L.tileLayer(tileUrl(caves), {
+		tileSize: 512, minZoom: FARTHEST, maxZoom: MOST, minNativeZoom: 0, maxNativeZoom: NATIVE, noWrap: true, className: 'pixelated', zIndex: 3
+	});
+	return overlayTiles[caves];
+}
+
+// The ground under sky builds, <folder>.under, is drawn only where something is built in the sky and
+// is clear elsewhere; laid over the surface, it takes the sky builds away.
+const underLayers = {};
+function underFor(folder) {
+	const under = folder + '.under';
+	overlayTiles[under] = underLayers[folder] = L.tileLayer(tileUrl(under), {
 		tileSize: 512, minZoom: FARTHEST, maxZoom: MOST, minNativeZoom: 0, maxNativeZoom: NATIVE, noWrap: true, className: 'pixelated', zIndex: 2
 	});
-	return caveLayers[caves];
 }
+
+// Shown, sky builds are simply the surface; hidden, the ground under them is laid over it.
+const SkyBuilds = L.Layer.extend({
+	onAdd() { this.swap(); },
+	onRemove() { this.swap(true); },
+	swap(hiding = !map.hasLayer(this)) {
+		if (this.current) map.removeLayer(this.current);
+		this.current = hiding ? underLayers[dimension] || null : null;
+		if (this.current) this.current.addTo(map);
+	}
+});
 
 const Caves = L.Layer.extend({
 	onAdd() { this.swap(); },
@@ -105,7 +126,7 @@ const Caves = L.Layer.extend({
 	// Follows the dimension shown; one without caves drawn shows its surface
 	swap() {
 		if (this.current) map.removeLayer(this.current);
-		this.current = caveLayers[dimension + '.caves'] || null;
+		this.current = overlayTiles[dimension + '.caves'] || null;
 		if (this.current) this.current.addTo(map);
 		if (layers.daylight) layers.daylight.show();
 	}
@@ -117,7 +138,7 @@ async function refreshTiles() {
 	if (!version || !version.tiles || version.tiles === tilesStamp) return;
 	tilesStamp = version.tiles;
 	extents = version.extents || {};
-	for (const [folder, layer] of [...Object.entries(tileLayers), ...Object.entries(caveLayers)]) {
+	for (const [folder, layer] of [...Object.entries(tileLayers), ...Object.entries(overlayTiles)]) {
 		// Below its floor a dimension has no tiles of its own, so the floor's are shrunk instead
 		const floor = extents[folder] ? extents[folder].floor : 0;
 		layer.options.minNativeZoom = floor;
@@ -174,6 +195,7 @@ map.on('baselayerchange', e => {
 	refreshMarkers();
 	refreshPlayers();
 	if (layers.caves && map.hasLayer(layers.caves)) layers.caves.swap();
+	if (layers.sky) layers.sky.swap();
 	if (layers.daylight) layers.daylight.show();
 	showBorder();
 });
@@ -1014,6 +1036,12 @@ function start(meta) {
 	for (const key of (meta && meta.layers) || []) {
 		if (key === 'daylight') offer(key, new Daylight());
 		else if (TITLES[key]) offer(key);
+	}
+	const skyFolders = ((meta && meta.sky) || []).filter(folder => tileLayers[folder]);
+	if (skyFolders.length) {
+		for (const folder of skyFolders) underFor(folder);
+		offer('sky', new SkyBuilds());
+		if (!map.hasLayer(layers.sky)) layers.sky.swap(true);
 	}
 	const caveFolders = ((meta && meta.caves) || []).filter(folder => tileLayers[folder]);
 	if (caveFolders.length) {
