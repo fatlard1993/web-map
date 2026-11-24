@@ -11,10 +11,10 @@ const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attribut
 map.setView([0, 0], NATIVE);
 
 const TITLES = { players: 'Players', homes: 'Homes', villages: 'Villages', spawn: 'Spawn',
-	portals: 'Portal links', ships: 'Ships', photos: 'Photos', border: 'World border', daylight: 'Day and night', grid: 'Grid' };
+	portals: 'Portal links', ships: 'Ships', photos: 'Photos', deaths: 'Deaths', border: 'World border', daylight: 'Day and night', grid: 'Grid' };
 const DIMENSION_TITLES = { minecraft_overworld: 'Overworld', minecraft_the_nether: 'Nether', minecraft_the_end: 'End' };
 const SHOWN_BY_DEFAULT = { grid: false };
-const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos'];
+const MARKER_LAYERS = ['homes', 'villages', 'spawn', 'portals', 'ships', 'photos', 'deaths'];
 const touch = matchMedia('(hover: none)').matches;
 // A pinch anywhere zooms the map, never the page: Safari on iOS ignores touch-action for pinches, so
 // its own gesture events are refused as well.
@@ -213,7 +213,7 @@ const Grid = L.GridLayer.extend({
 // many more, unless the map is in as far as it goes. Its lines act as their labels would, and any
 // other line zooms in on the stack, which spreads it apart.
 const labelled = new Set();
-const RANK = ['spawn', 'player', 'village', 'portal', 'ship', 'home', 'photo'];
+const RANK = ['spawn', 'player', 'village', 'portal', 'ship', 'home', 'death', 'photo'];
 const LINE = 17;
 const STACK_SHOWS = 5;
 const measure = document.createElement('canvas').getContext('2d');
@@ -493,6 +493,14 @@ async function refreshMarkers() {
 			named(L.marker(at(ship.x, ship.z), { icon: dot(ship.live ? 'ship' : 'ship away') }), text).addTo(layers.ships);
 		}
 	}
+	if (layers.deaths) {
+		for (const death of here(markers.deaths)) {
+			const marker = named(L.marker(at(death.x, death.z), { icon: dot('death') }), death.name + ' died, ' + ago(death.time));
+			marker.bindPopup(() => deathView(death), { maxWidth: 280 });
+			marker.label.act = () => marker.openPopup();
+			marker.addTo(layers.deaths);
+		}
+	}
 	if (layers.photos) {
 		const spots = new Map();
 		for (const photo of here(markers.photos)) {
@@ -515,6 +523,22 @@ async function refreshMarkers() {
 
 let lastMarkers = {};
 let lastPlayers = [];
+const ago = time => {
+	const minutes = Math.max(0, Math.round((Date.now() - time) / 60000));
+	return minutes < 60 ? minutes + ' min ago' : minutes < 2880 ? Math.round(minutes / 60) + ' h ago' : Math.round(minutes / 1440) + ' days ago';
+};
+
+function deathView(death) {
+	const view = document.createElement('div');
+	view.className = 'spot';
+	for (const text of [death.message || death.name + ' died', 'x ' + death.x + ', y ' + death.y + ', z ' + death.z, ago(death.time)]) {
+		const p = document.createElement('p');
+		p.textContent = text;
+		view.append(p);
+	}
+	return view;
+}
+
 const playerMarkers = new Map();
 // A player glides from one place to the next over the five seconds between them, unless they went
 // farther than anyone walks in that time, a teleport, or the map is mid-zoom, when gliding would drift.

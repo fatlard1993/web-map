@@ -51,6 +51,7 @@ final class Layers {
 	private final Set<String> drawnFolders = new HashSet<>();
 	private final Homes homes = new Homes();
 	private final ShipLog ships;
+	private final DeathLog deaths;
 	/** A layer whose mod threw or did not match this build: off until the server restarts. Both threads. */
 	private final Set<String> broken = ConcurrentHashMap.newKeySet();
 	private volatile JsonArray photos = new JsonArray();
@@ -60,6 +61,7 @@ final class Layers {
 		this.config = config;
 		config.dimensions.forEach(id -> drawnFolders.add(Dimensions.folder(id)));
 		this.ships = new ShipLog(server.getWorldPath(LevelResource.ROOT).resolve("web-map").resolve("ships.json"));
+		this.deaths = new DeathLog(server.getWorldPath(LevelResource.ROOT).resolve("web-map").resolve("deaths.json"));
 	}
 
 	void started(MinecraftServer server) {
@@ -83,6 +85,21 @@ final class Layers {
 			refreshPhotos(server);
 			writeMarkers(server);
 		}
+	}
+
+	/** A player died: kept, and on the map at the next markers. */
+	void died(ServerPlayer player, net.minecraft.world.damagesource.DamageSource source) {
+		String message;
+		try {
+			message = source.getLocalizedDeathMessage(player).getString();
+		} catch (RuntimeException e) {
+			message = null;
+		}
+		deaths.died(new DeathLog.Death(player.getUUID().toString(), player.getGameProfile().name(),
+			player.level().dimension().identifier().toString(), (int) Math.floor(player.getX()), (int) Math.floor(player.getY()),
+			(int) Math.floor(player.getZ()), message, System.currentTimeMillis()));
+		String snapshot = deaths.snapshot();
+		output.later("keep where players died", () -> deaths.write(snapshot));
 	}
 
 	void entityUnloaded(Entity entity) {
@@ -202,6 +219,19 @@ final class Layers {
 			if (config.ships && !broken.contains("ships")) markers.add("ships", shipMarkers());
 		}
 		if (config.photos && PHOTOGRAPHY) markers.add("photos", photos);
+		if (config.deaths) {
+			JsonArray list = new JsonArray();
+			for (DeathLog.Death death : deaths.all(System.currentTimeMillis())) {
+				if (!drawnFolders.contains(death.dimension()) || !shownOnMaps(server, java.util.UUID.fromString(death.player()))) continue;
+				JsonObject entry = spot(death.dimension(), death.x(), death.z());
+				entry.addProperty("name", death.name());
+				entry.addProperty("y", death.y());
+				if (death.message() != null) entry.addProperty("message", death.message());
+				entry.addProperty("time", death.time());
+				list.add(entry);
+			}
+			markers.add("deaths", list);
+		}
 		output.writeLater("markers.json", GSON.toJson(markers));
 	}
 

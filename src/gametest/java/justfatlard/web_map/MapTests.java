@@ -105,6 +105,27 @@ public class MapTests {
 		helper.succeed();
 	}
 
+	@GameTest
+	public void eachPlayersLastThreeDeathsAreKeptAcrossARestart(GameTestHelper helper) throws Exception {
+		Path file = Files.createTempDirectory("web-map-test").resolve("deaths.json");
+		DeathLog log = new DeathLog(file);
+		String steve = java.util.UUID.randomUUID().toString(), alex = java.util.UUID.randomUUID().toString();
+		long now = System.currentTimeMillis();
+		for (int i = 0; i < 4; i++) log.died(new DeathLog.Death(steve, "Steve", "minecraft:overworld", i, 64, 0, null, now + i));
+		log.died(new DeathLog.Death(alex, "Alex", "minecraft:the_nether", 9, 64, 9, "Alex burned", now));
+		// One past its days is forgotten
+		log.died(new DeathLog.Death(alex, "Alex", "minecraft:overworld", 1, 1, 1, null, now - java.util.concurrent.TimeUnit.DAYS.toMillis(31)));
+		log.write(log.snapshot());
+
+		var kept = new DeathLog(file).all(now);
+		var steves = kept.stream().filter(d -> d.name().equals("Steve")).map(DeathLog.Death::x).toList();
+		helper.assertTrue(steves.equals(java.util.List.of(1, 2, 3)), Component.literal("Steve's last three, not " + steves));
+		var alexes = kept.stream().filter(d -> d.name().equals("Alex")).toList();
+		helper.assertTrue(alexes.size() == 1 && alexes.get(0).dimension().equals("minecraft_the_nether"),
+			Component.literal("Alex's recent death alone, in the Nether's folder, not " + alexes));
+		helper.succeed();
+	}
+
 	@GameTest(skyAccess = true)
 	public void aSavedChunkIsDrawnAsItWasSaved(GameTestHelper helper) {
 		helper.setBlock(HIGH_UP, Blocks.EMERALD_BLOCK);

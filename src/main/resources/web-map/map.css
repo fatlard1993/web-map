@@ -73,6 +73,8 @@ html, body { touch-action: none; overscroll-behavior: none; }
 .ship::before { border-radius: 0 0 50% 50%; }
 .ship.away { opacity: 0.55; font-style: italic; }
 .photo { --dot: #f2f2f2; cursor: pointer; }
+.death { --dot: #c9c9c9; cursor: pointer; }
+.death::before { border-radius: 4px 4px 1px 1px; width: 7px; height: 9px; }
 .photo::before { border-radius: 2px; width: 10px; height: 8px; box-shadow: 0 0 0 2px #000, inset 0 0 0 2px #555; }
 .acts { cursor: pointer; }
 .line.acts:hover { text-decoration: underline; }

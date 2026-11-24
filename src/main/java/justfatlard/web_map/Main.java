@@ -1,6 +1,7 @@
 package justfatlard.web_map;
 
 import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -8,6 +9,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -52,6 +54,9 @@ public class Main implements DedicatedServerModInitializer {
 		});
 		ServerEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
 			if (layers != null) layers.entityUnloaded(entity);
+		});
+		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+			if (layers != null && entity instanceof ServerPlayer player) layers.died(player, source);
 		});
 		ServerTickEvents.END_SERVER_TICK.register(Main::tick);
 	}
