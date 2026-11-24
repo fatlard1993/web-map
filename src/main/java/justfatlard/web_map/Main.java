@@ -65,7 +65,7 @@ public class Main implements DedicatedServerModInitializer {
 		output = new Output(FabricLoader.getInstance().getGameDir().resolve("web-map"));
 		Output writing = output;
 		drawing = new Drawing(output, config.drawnDimensions(),
-			() -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + "}"));
+			extents -> writing.writeLater("version.json", "{\"tiles\":" + System.currentTimeMillis() + ",\"extents\":" + extents + "}"));
 		layers = new Layers(output, config, server);
 		ticks = 0;
 		for (String file : PAGE) {

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * Which chunks need drawing, and drawing them a few at a time.
@@ -33,14 +34,21 @@ final class Drawing {
 	private final Map<ServerLevel, Long2IntMap> drawnColours = new HashMap<>();
 	/** Chunks drawn from the live world since the server started, which a saved copy must not overwrite. */
 	private final Map<ServerLevel, Set<Long>> drawnLive = new ConcurrentHashMap<>();
-	private final Runnable whenWritten;
+	private final Consumer<String> whenWritten;
 
-	/** @param whenWritten run on the writer thread after any flush that wrote tiles */
-	Drawing(Output output, Set<String> dimensions, Runnable whenWritten) {
+	/**
+	 * @param whenWritten run on the writer thread with the tiles' extents, once what is on disk has been
+	 *                    read and after any flush that wrote tiles
+	 */
+	Drawing(Output output, Set<String> dimensions, Consumer<String> whenWritten) {
 		this.output = output;
 		this.tiles = new TileStore(output.root.resolve("tiles"));
 		this.dimensions = dimensions;
 		this.whenWritten = whenWritten;
+		output.later("read the map tiles", () -> {
+			tiles.settle();
+			whenWritten.accept(tiles.extentsJson());
+		});
 	}
 
 	boolean draws(ServerLevel level) {
@@ -87,7 +95,7 @@ final class Drawing {
 	/** Writes what was painted since the last flush. */
 	void flush() {
 		output.later("write map tiles", () -> {
-			if (tiles.flush()) whenWritten.run();
+			if (tiles.flush()) whenWritten.accept(tiles.extentsJson());
 		});
 	}
 
@@ -112,7 +120,7 @@ final class Drawing {
 	java.util.concurrent.CompletableFuture<Boolean> flushNow() {
 		return output.submit(() -> {
 			boolean wrote = tiles.flush();
-			if (wrote) whenWritten.run();
+			if (wrote) whenWritten.accept(tiles.extentsJson());
 			return wrote;
 		});
 	}

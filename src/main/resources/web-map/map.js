@@ -1,9 +1,11 @@
 'use strict';
 
 // One map unit is one block, and at zoom 4 a pixel is a block: the tiles' native zoom. Past it the
-// tiles are enlarged, up to 16 pixels a block.
+// tiles are enlarged, up to 16 pixels a block. Below 0 the server draws as far out as the world
+// reaches, and the page lets you out one step past the whole of it.
 const NATIVE = 4;
 const MOST = NATIVE + 4;
+const FARTHEST = -32;
 const crs = L.extend({}, L.CRS.Simple, { transformation: new L.Transformation(1 / 16, 0, 1 / 16, 0) });
 const map = L.map('map', { crs, minZoom: 0, maxZoom: MOST, zoomSnap: 1, attributionControl: false });
 map.setView([0, 0], NATIVE);
@@ -57,11 +59,12 @@ document.getElementById('hint-close').addEventListener('click', () => { hint.hid
 
 let dimension = 'minecraft_overworld';
 let tilesStamp = 0;
+let extents = {};
 const tileLayers = {};
 const tileUrl = folder => 'tiles/' + folder + '/{z}/{x}_{y}.png?v=' + tilesStamp;
 function tilesFor(folder) {
 	const layer = L.tileLayer(tileUrl(folder), {
-		tileSize: 512, minZoom: 0, maxZoom: MOST, maxNativeZoom: NATIVE, noWrap: true, className: 'pixelated'
+		tileSize: 512, minZoom: FARTHEST, maxZoom: MOST, minNativeZoom: 0, maxNativeZoom: NATIVE, noWrap: true, className: 'pixelated'
 	});
 	layer.folder = folder;
 	tileLayers[folder] = layer;
@@ -73,8 +76,48 @@ async function refreshTiles() {
 	const version = await json('version.json').catch(() => null);
 	if (!version || !version.tiles || version.tiles === tilesStamp) return;
 	tilesStamp = version.tiles;
-	for (const folder in tileLayers) tileLayers[folder].setUrl(tileUrl(folder));
+	extents = version.extents || {};
+	for (const folder in tileLayers) {
+		// Below its floor a dimension has no tiles of its own, so the floor's are shrunk instead
+		const floor = extents[folder] ? extents[folder].floor : 0;
+		tileLayers[folder].options.minNativeZoom = floor;
+		tileLayers[folder].setUrl(tileUrl(folder));
+	}
+	fitZoomOut();
 }
+
+const drawnBounds = () => {
+	const e = extents[dimension];
+	return e && L.latLngBounds([e.z0, e.x0], [e.z1, e.x1]);
+};
+
+// However big the drawn world, zooming out stops one step past seeing all of it.
+function fitZoomOut() {
+	const bounds = drawnBounds();
+	// The zoom that fits is held to the current least, so lift that first
+	map.options.minZoom = FARTHEST;
+	map.setMinZoom(bounds ? Math.min(0, map.getBoundsZoom(bounds) - 1) : 0);
+}
+
+const WholeMap = L.Control.extend({
+	options: { position: 'topleft' },
+	onAdd() {
+		const bar = L.DomUtil.create('div', 'leaflet-bar');
+		const button = L.DomUtil.create('a', 'whole-map', bar);
+		button.href = '#';
+		button.title = 'Show the whole map';
+		button.setAttribute('role', 'button');
+		button.setAttribute('aria-label', 'Show the whole map');
+		L.DomEvent.disableClickPropagation(bar);
+		L.DomEvent.on(button, 'click', e => {
+			L.DomEvent.preventDefault(e);
+			const bounds = drawnBounds();
+			if (bounds) map.fitBounds(bounds);
+		});
+		return bar;
+	}
+});
+new WholeMap().addTo(map);
 
 // --- Layers, shown or hidden per viewer; the server decides which exist at all ---
 
@@ -87,6 +130,7 @@ map.on('overlayremove', e => { shown[e.layer.key] = false; kept.set('web-map lay
 map.on('baselayerchange', e => {
 	dimension = e.layer.folder;
 	kept.set('web-map dimension', dimension);
+	fitZoomOut();
 	refreshMarkers();
 	refreshPlayers();
 });
@@ -98,10 +142,12 @@ function offer(key, layer = L.layerGroup()) {
 	if (showing(key)) layer.addTo(map);
 }
 
-// Chunk lines once a chunk is at least eight pixels across, region lines always, and region numbers
-// once a region is at least 96 pixels across.
+// Chunk lines once a chunk is at least eight pixels across, region numbers once a region is at least
+// 96 pixels across, and region lines always, though far enough out only every second, fourth, and so
+// on, keeping them at least 24 pixels apart.
 const CHUNK_LINES_FROM = 8;
 const REGION_NUMBERS_FROM = 96;
+const LINES_APART = 24;
 const Grid = L.GridLayer.extend({
 	createTile(coords) {
 		const tile = document.createElement('canvas');
@@ -126,7 +172,9 @@ const Grid = L.GridLayer.extend({
 			context.stroke();
 		};
 		if (16 * scale >= CHUNK_LINES_FROM) lines(16, 'rgba(255, 255, 255, 0.18)');
-		lines(512, 'rgba(255, 255, 255, 0.55)');
+		let regionLines = 512;
+		while (regionLines * scale < LINES_APART) regionLines *= 2;
+		lines(regionLines, 'rgba(255, 255, 255, 0.55)');
 		if (512 * scale >= REGION_NUMBERS_FROM) {
 			context.font = '11px ui-monospace, monospace';
 			context.fillStyle = 'rgba(255, 255, 255, 0.8)';
@@ -343,7 +391,7 @@ function start(meta) {
 	setInterval(refreshTiles, 30000);
 
 	for (const key of (meta && meta.layers) || []) if (TITLES[key]) offer(key);
-	offer('grid', new Grid({ tileSize: 512, minZoom: 0, maxZoom: MOST, pane: 'overlayPane' }));
+	offer('grid', new Grid({ tileSize: 512, minZoom: FARTHEST, maxZoom: MOST, pane: 'overlayPane' }));
 	map.on('overlayadd overlayremove', refreshPlayers);
 	refreshMarkers();
 	setInterval(refreshMarkers, 30000);
