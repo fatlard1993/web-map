@@ -171,21 +171,23 @@ final class Layers {
 	}
 
 	/**
-	 * Who is where, as it was the delay ago: a player is shown only where they were then, and only if
-	 * they are still online, so the map cannot be used to chase anyone. Spectators, the invisible, those
-	 * sneaking or underground, and those who asked to be left off are not seen at all.
+	 * Who is where, as it was the delay ago, so the map cannot be used to chase anyone: a player is shown
+	 * where they were then, and only if they may be seen now. Spectators, the invisible, those sneaking,
+	 * underground or in a hidden area, and those who asked to be left off are not seen at all.
 	 */
 	private void writePlayers(MinecraftServer server) {
 		List<Spot> now = new ArrayList<>();
-		Set<String> online = new HashSet<>();
+		// Who may be seen at all right now: a sighting from the delay ago is shown only for them, so going
+		// invisible, sneaking, underground or off the map hides someone at once rather than the delay later
+		Set<String> seeable = new HashSet<>();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			String name = player.getGameProfile().name();
-			online.add(name);
 			if (player.isSpectator() || player.isInvisible() || !shownOnMaps(server, player.getUUID())) continue;
 			if (config.hideSneaking && player.isShiftKeyDown()) continue;
 			if (config.hideUnderground && underground(player)) continue;
 			String dimension = Dimensions.folder(player.level().dimension());
 			if (!shown(dimension, player.getBlockX(), player.getBlockZ())) continue;
+			seeable.add(name);
 			String wornName = OFFLINE_SKINS ? guarded("faces", () -> justfatlard.web_map.integration.SkinLayer.wornName(player.getUUID(), name)) : null;
 			now.add(new Spot(name, dimension, (int) Math.floor(player.getX()), (int) Math.floor(player.getZ()), wornName));
 		}
@@ -195,7 +197,8 @@ final class Layers {
 		JsonArray players = new JsonArray();
 		List<String> worn = new ArrayList<>();
 		for (Spot spot : shown) {
-			if (!online.contains(spot.name())) continue;
+			// A hidden area made since is honoured for where they were, too
+			if (!seeable.contains(spot.name()) || !shown(spot.dimension(), spot.x(), spot.z())) continue;
 			JsonObject entry = spot(spot.dimension(), spot.x(), spot.z());
 			entry.addProperty("name", spot.name());
 			players.add(entry);
