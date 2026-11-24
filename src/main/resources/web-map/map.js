@@ -447,6 +447,7 @@ async function refreshMarkers() {
 	if (!MARKER_LAYERS.some(key => layers[key])) return;
 	const markers = await json('markers.json').catch(() => null);
 	if (!markers) return;
+	lastMarkers = markers;
 	for (const key of MARKER_LAYERS) if (layers[key]) layers[key].clearLayers();
 
 	if (layers.homes) {
@@ -510,6 +511,8 @@ async function refreshMarkers() {
 	}
 }
 
+let lastMarkers = {};
+let lastPlayers = [];
 const playerMarkers = new Map();
 // A player glides from one place to the next over the five seconds between them, unless they went
 // farther than anyone walks in that time, a teleport, or the map is mid-zoom, when gliding would drift.
@@ -525,6 +528,7 @@ async function refreshPlayers() {
 	if (!layers.players) return;
 	const players = await json('players.json').catch(() => null);
 	if (!players) return;
+	lastPlayers = players;
 	const seen = new Set();
 	for (const p of here(players)) {
 		seen.add(p.name);
@@ -630,6 +634,70 @@ map.on('click', e => {
 	L.popup({ maxWidth: 320, className: 'spot-popup' }).setLatLng(at(x, z)).setContent(spotView(x, z)).openOn(map);
 });
 
+// --- Search: by name among everything the map shows, in any dimension, or by coordinates ---
+
+const COORDINATES = /^\s*(-?\d+)(?:[\s,]+-?\d+|[\s,]+~)?[\s,]+(-?\d+)\s*$/;
+
+function searchables() {
+	const found = [];
+	const add = (kind, text, spot) => { if (spot && !spot.elsewhere && tileLayers[spot.dimension]) found.push({ kind, text, spot }); };
+	for (const p of lastPlayers) add('player', p.name, p);
+	for (const h of lastMarkers.homes || []) add('home', h.name + "'s home", h);
+	for (const v of lastMarkers.villages || []) add('village', v.name || 'Village', v);
+	if (lastMarkers.spawn) add('spawn', 'Spawn', lastMarkers.spawn);
+	for (const link of lastMarkers.portals || []) for (const end of [link.from, link.to]) add('portal', link.name || 'Portal', end);
+	for (const ship of lastMarkers.ships || []) add('ship', ship.name || 'A ship', ship);
+	for (const sign of lastMarkers.signs || []) add('sign', sign.text, sign);
+	for (const death of lastMarkers.deaths || []) add('death', death.name + ' died', death);
+	return found;
+}
+
+const Search = L.Control.extend({
+	options: { position: 'topleft' },
+	onAdd() {
+		const box = L.DomUtil.create('div', 'search');
+		const input = L.DomUtil.create('input', '', box);
+		input.type = 'search';
+		input.placeholder = 'Find a name, or x z';
+		input.setAttribute('aria-label', 'Find a name, or go to coordinates');
+		const results = L.DomUtil.create('ul', 'search-results', box);
+		L.DomEvent.disableClickPropagation(box);
+		L.DomEvent.disableScrollPropagation(box);
+		let shown = [];
+		const go = item => {
+			results.textContent = '';
+			input.blur();
+			travel(item.spot);
+		};
+		const list = () => {
+			results.textContent = '';
+			const query = input.value.trim();
+			if (!query) { shown = []; return; }
+			const coordinates = COORDINATES.exec(query);
+			shown = coordinates
+				? [{ kind: 'spot', text: 'Go to x ' + coordinates[1] + ', z ' + coordinates[2], spot: { dimension, x: +coordinates[1], z: +coordinates[2] } }]
+				: searchables().filter(item => item.text.toLowerCase().includes(query.toLowerCase()))
+					.sort((a, b) => (a.spot.dimension !== dimension) - (b.spot.dimension !== dimension) || a.text.localeCompare(b.text))
+					.slice(0, 8);
+			if (!shown.length) {
+				const none = L.DomUtil.create('li', 'search-none', results);
+				none.textContent = 'Nothing by that name';
+			}
+			for (const item of shown) {
+				const li = L.DomUtil.create('li', 'line ' + item.kind, results);
+				li.textContent = item.text + (item.spot.dimension !== dimension ? ' (' + titleOf(item.spot.dimension) + ')' : '');
+				L.DomEvent.on(li, 'click', () => go(item));
+			}
+		};
+		L.DomEvent.on(input, 'input', list);
+		L.DomEvent.on(input, 'keydown', e => {
+			if (e.key === 'Enter' && shown.length) go(shown[0]);
+			if (e.key === 'Escape') { input.value = ''; list(); input.blur(); }
+		});
+		return box;
+	}
+});
+
 // --- Measuring: points clicked in turn, and how far it is along them ---
 
 let measuring = null;
@@ -698,6 +766,7 @@ function start(meta) {
 		if (folders.length > 1) control.addBaseLayer(layer, titleOf(folder));
 	}
 	tileLayers[dimension].addTo(map);
+	new Search().addTo(map);
 	new Measure().addTo(map);
 	followLink();
 	map.on('moveend', keepLink);

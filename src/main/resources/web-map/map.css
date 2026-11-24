@@ -103,6 +103,17 @@ html, body { touch-action: none; overscroll-behavior: none; }
 .measure-total { background: var(--panel); color: var(--fg); border: 0; box-shadow: none; font-weight: 600; }
 .measure-total::before { display: none; }
 
+.search { position: relative; }
+.search input {
+	width: 190px; max-width: calc(100vw - 80px); box-sizing: border-box; padding: 6px 8px; font: inherit;
+	background: var(--panel); color: var(--fg); border: 0; border-radius: 4px; box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+}
+.search-results { list-style: none; margin: 4px 0 0; padding: 0; background: var(--panel); border-radius: 4px; color: var(--fg); }
+.search-results:empty { display: none; }
+.search-results li { padding: 6px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; cursor: pointer; }
+.search-results li:hover { background: rgba(255, 255, 255, 0.1); }
+.search-results .search-none { cursor: default; color: #aaa; }
+
 .spot p { margin: 0 0 4px; }
 .spot-where { font: 600 13px/1.4 ui-monospace, monospace; }
 .spot-about:empty { display: none; }
