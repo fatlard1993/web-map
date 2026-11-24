@@ -327,6 +327,18 @@ function showStack(marker, members) {
 
 map.on('zoomend', declutterSoon);
 
+// --- Portals lead somewhere: clicking one end shows the other, in its own dimension if need be ---
+
+function travel(end) {
+	if (end.dimension !== dimension) {
+		if (!tileLayers[end.dimension]) return;
+		map.removeLayer(tileLayers[dimension]);
+		// The layers control hears this and switches everything else over
+		tileLayers[end.dimension].addTo(map);
+	}
+	map.setView(at(end.x, end.z), Math.max(map.getZoom(), NATIVE - 1));
+}
+
 // --- Markers ---
 
 const here = list => (list || []).filter(item => item.dimension === dimension);
@@ -456,7 +468,8 @@ async function refreshMarkers() {
 				const other = end === link.from ? link.to : link.from;
 				const away = other.elsewhere ? 'elsewhere' : titleOf(other.dimension) + ' ' + other.x + ', ' + other.z;
 				const leadsAway = ends.length === 2 ? name : name + ' → ' + away;
-				const marker = named(L.marker(at(end.x, end.z), { icon: dot('portal') }), leadsAway);
+				const goes = !other.elsewhere && tileLayers[other.dimension] ? () => travel(other) : null;
+				const marker = named(L.marker(at(end.x, end.z), { icon: dot('portal'), title: goes ? 'Go to the other end' : '' }), leadsAway, goes);
 				marker.label.portal = color;
 				marker.on('add', () => marker.getElement().style.setProperty('--portal', color));
 				marker.addTo(layers.portals);
