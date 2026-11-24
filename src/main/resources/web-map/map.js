@@ -313,19 +313,23 @@ function showStack(marker, members) {
 		const target = Math.min(MOST, Math.max(map.getZoom() + 1, map.getBoundsZoom(bounds, false, L.point(80, 80))));
 		map.setView(bounds.getCenter(), target);
 	};
-	const line = (kind, text, onClick, style) => {
+	const line = (kind, text, onClick, label) => {
 		const div = document.createElement('div');
 		div.className = 'line ' + kind;
 		div.textContent = text;
 		if (kind.includes('portal') && kind.includes('acts')) div.title = 'Go to the other end';
-		if (style) div.style.setProperty('--portal', style);
+		if (label && label.portal) div.style.setProperty('--portal', label.portal);
+		if (label && label.face) {
+			div.style.setProperty('--face', label.face);
+			div.classList.add('has-face');
+		}
 		L.DomEvent.on(div, 'click', e => { L.DomEvent.stop(e); onClick(); });
 		// Only the double click stops here: a touch starting on a line may be one finger of a pinch, which the map must see
 		L.DomEvent.on(div, 'dblclick', L.DomEvent.stopPropagation);
 		element.append(div);
 	};
 	for (const m of members.slice(0, shows)) {
-		line(m.label.kind + (m.label.act ? ' acts' : ''), m.label.text, m.label.act || spread, m.label.portal);
+		line(m.label.kind + (m.label.act ? ' acts' : ''), m.label.text, m.label.act || spread, m.label);
 	}
 	if (shows < members.length) line('more', moreText(members.length - shows), spread);
 	marker.setZIndexOffset(3000);
@@ -542,6 +546,16 @@ function deathView(death) {
 	return view;
 }
 
+// A player's face, where the server has one, stands in for their dot.
+function showFace(marker) {
+	const element = marker.getElement();
+	if (!element) return;
+	if (marker.label.face) element.style.setProperty('--face', marker.label.face);
+	else element.style.removeProperty('--face');
+	element.classList.toggle('has-face', !!marker.label.face);
+	declutterSoon();
+}
+
 const playerMarkers = new Map();
 // A player glides from one place to the next over the five seconds between them, unless they went
 // farther than anyone walks in that time, a teleport, or the map is mid-zoom, when gliding would drift.
@@ -564,8 +578,15 @@ async function refreshPlayers() {
 		let marker = playerMarkers.get(p.name);
 		if (!marker) {
 			marker = named(L.marker(at(p.x, p.z), { icon: dot('player'), zIndexOffset: 1000 }), p.name);
+			marker.on('add', () => showFace(marker));
 			playerMarkers.set(p.name, marker);
 			marker.addTo(layers.players);
+		}
+		const face = p.face ? 'url("heads/' + encodeURIComponent(p.name) + '.png?v=' + encodeURIComponent(p.face) + '")' : null;
+		if (marker.label.face !== face) {
+			marker.label.face = face;
+			marker.shownAs = null;
+			showFace(marker);
 		}
 		const from = marker.getLatLng(), to = at(p.x, p.z);
 		marker.getElement()?.classList.toggle('glide', !zooming && Math.hypot(from.lat - to[0], from.lng - to[1]) <= GLIDES_UP_TO);

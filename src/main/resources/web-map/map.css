@@ -62,6 +62,8 @@ html, body { touch-action: none; overscroll-behavior: none; }
 	border-radius: 50%; background: var(--dot); box-shadow: 0 0 0 2px #000;
 }
 .player { --dot: #ffd23f; }
+.has-face::before { background: var(--face) center / cover; image-rendering: pixelated; border-radius: 2px; width: 12px; height: 12px; vertical-align: -3px; margin-left: -2px; }
+.stack.has-face::before { display: none; }
 .home { --dot: #ff7a59; }
 .home::before { border-radius: 2px; }
 .village { --dot: #7bd389; font-weight: 600; }

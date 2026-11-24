@@ -45,6 +45,7 @@ final class Layers {
 	private static final boolean BIG_BOATS = FabricLoader.getInstance().isModLoaded("big-boats-justfatlard");
 	private static final boolean PHOTOGRAPHY = FabricLoader.getInstance().isModLoaded("redstone-photography");
 	private static final boolean PANDORICAL = FabricLoader.getInstance().isModLoaded("pandorical");
+	private static final boolean OFFLINE_SKINS = FabricLoader.getInstance().isModLoaded("offline-skins-justfatlard");
 
 	private final Output output;
 	private final WebMapConfig config;
@@ -53,6 +54,7 @@ final class Layers {
 	private final ShipLog ships;
 	private final DeathLog deaths;
 	private final Signs signs;
+	private final Faces faces;
 	/** A layer whose mod threw or did not match this build: off until the server restarts. Both threads. */
 	private final Set<String> broken = ConcurrentHashMap.newKeySet();
 	private volatile JsonArray photos = new JsonArray();
@@ -60,6 +62,7 @@ final class Layers {
 	Layers(Output output, WebMapConfig config, MinecraftServer server, Signs signs) {
 		this.output = output;
 		this.signs = signs;
+		this.faces = new Faces(output.root.resolve("heads"));
 		this.config = config;
 		config.dimensions.forEach(id -> drawnFolders.add(Dimensions.folder(id)));
 		this.ships = new ShipLog(server.getWorldPath(LevelResource.ROOT).resolve("web-map").resolve("ships.json"));
@@ -149,15 +152,30 @@ final class Layers {
 
 	private void writePlayers(MinecraftServer server) {
 		JsonArray players = new JsonArray();
+		List<String> worn = new ArrayList<>();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			if (player.isSpectator() || player.isInvisible() || !shownOnMaps(server, player.getUUID())) continue;
 			String dimension = Dimensions.folder(player.level().dimension());
 			if (!drawnFolders.contains(dimension)) continue;
+			String name = player.getGameProfile().name();
 			JsonObject entry = spot(dimension, (int) Math.floor(player.getX()), (int) Math.floor(player.getZ()));
-			entry.addProperty("name", player.getGameProfile().name());
+			entry.addProperty("name", name);
 			players.add(entry);
+			String wornName = OFFLINE_SKINS ? guarded("faces", () -> justfatlard.web_map.integration.SkinLayer.wornName(player.getUUID(), name)) : null;
+			worn.add(wornName);
 		}
-		output.writeLater("players.json", GSON.toJson(players));
+		// Faces are read from disk on the writer thread, and the list written once they are in place
+		output.later("draw faces and write players.json", () -> {
+			for (int i = 0; i < players.size(); i++) {
+				String wornName = worn.get(i);
+				if (wornName == null) continue;
+				JsonObject entry = players.get(i).getAsJsonObject();
+				byte[] skin = guarded("faces", () -> justfatlard.web_map.integration.SkinLayer.png(wornName));
+				String face = faces.face(entry.get("name").getAsString(), skin);
+				if (face != null) entry.addProperty("face", face);
+			}
+			output.write("players.json", GSON.toJson(players));
+		});
 	}
 
 	/** The overworld's time of day, 0 at sunrise as the game counts it, and each drawn dimension's border. */

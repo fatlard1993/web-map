@@ -33,7 +33,8 @@
     "player-portals-justfatlard": ">=1.1.6",
     "big-boats-justfatlard": "*",
     "redstone-photography": ">=1.1.10",
-    "pandorical": ">=15.37.0"
+    "pandorical": ">=15.37.0",
+    "offline-skins-justfatlard": "*"
   },
   "custom": {
     "modmenu": {
