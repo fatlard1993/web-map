@@ -777,7 +777,7 @@ async function describeSpot(view, folder, x, z) {
 		if (muted) p.className = 'muted-text';
 		view.about.append(p);
 	};
-	if (!names || !here) return line('Nothing drawn here yet', true);
+	if (!names || !Array.isArray(names.blocks) || !Array.isArray(names.biomes) || !here) return line('Nothing drawn here yet', true);
 	const block = n => n && names.blocks[n - 1] ? prettyName(names.blocks[n - 1]) : null;
 	const biome = n => n && names.biomes[n - 1] ? prettyName(names.biomes[n - 1]) : null;
 	view.spot.y = here.y + 1;
@@ -1079,4 +1079,4 @@ function start(meta) {
 	}
 }
 
-json('meta.json').then(start).catch(() => start(null));
+json('meta.json').catch(() => null).then(start);
