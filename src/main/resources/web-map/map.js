@@ -499,10 +499,15 @@ function photoView(photos) {
 	return view;
 }
 
+let markersShown = null;
 async function refreshMarkers() {
 	if (!MARKER_LAYERS.some(key => layers[key])) return;
 	const markers = await json('markers.json').catch(() => null);
 	if (!markers) return;
+	// Rebuilding closes any popup open on a marker, so it happens only when there is something new to show
+	const shownNow = dimension + JSON.stringify(markers);
+	if (shownNow === markersShown) return;
+	markersShown = shownNow;
 	lastMarkers = markers;
 	for (const key of MARKER_LAYERS) if (layers[key]) layers[key].clearLayers();
 
