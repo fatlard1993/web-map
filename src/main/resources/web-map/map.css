@@ -92,3 +92,13 @@ html, body { touch-action: none; overscroll-behavior: none; }
 
 /* Players glide between the places they are seen */
 .leaflet-marker-icon.glide { transition: transform 5s linear; }
+
+.leaflet-bar a.measure { position: relative; }
+.leaflet-bar a.measure::before {
+	content: ""; position: absolute; left: 7px; top: 12px; width: 16px; height: 6px;
+	border: 2px solid #333; border-top: 0; box-sizing: border-box;
+}
+.leaflet-bar a.measure.on { background: #ffd23f; }
+.measuring, .measuring .leaflet-interactive { cursor: crosshair; }
+.measure-total { background: var(--panel); color: var(--fg); border: 0; box-shadow: none; font-weight: 600; }
+.measure-total::before { display: none; }

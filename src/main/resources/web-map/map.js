@@ -543,6 +543,62 @@ async function refreshPlayers() {
 	elsewhere.textContent = 'Elsewhere: ' + away.map(p => p.name + ' (' + titleOf(p.dimension) + ')').join(', ');
 }
 
+// --- Measuring: points clicked in turn, and how far it is along them ---
+
+let measuring = null;
+const WALKING = 4.317, SPRINTING = 5.612;
+const duration = seconds => seconds < 90 ? Math.round(seconds) + ' s' : Math.round(seconds / 60) + ' min';
+
+function measureLabel(points) {
+	let blocks = 0;
+	for (let i = 1; i < points.length; i++) blocks += Math.hypot(points[i].lng - points[i - 1].lng, points[i].lat - points[i - 1].lat);
+	const text = Math.round(blocks) + ' blocks, ' + duration(blocks / WALKING) + ' walking, ' + duration(blocks / SPRINTING) + ' sprinting';
+	return dimension === 'minecraft_overworld' && tileLayers.minecraft_the_nether && blocks >= 64
+		? text + '; ' + Math.round(blocks / 8) + ' through the Nether' : text;
+}
+
+function stopMeasuring() {
+	if (!measuring) return;
+	measuring.layer.remove();
+	measuring.button.classList.remove('on');
+	map.getContainer().classList.remove('measuring');
+	measuring = null;
+}
+
+const Measure = L.Control.extend({
+	options: { position: 'topleft' },
+	onAdd() {
+		const bar = L.DomUtil.create('div', 'leaflet-bar');
+		const button = L.DomUtil.create('a', 'measure', bar);
+		button.href = '#';
+		button.title = button.ariaLabel = 'Measure a distance';
+		button.setAttribute('role', 'button');
+		L.DomEvent.disableClickPropagation(bar);
+		L.DomEvent.on(button, 'click', e => {
+			L.DomEvent.preventDefault(e);
+			if (measuring) return stopMeasuring();
+			map.closePopup();
+			const layer = L.layerGroup().addTo(map);
+			const line = L.polyline([], { color: '#ffd23f', weight: 2, dashArray: '4 4', interactive: false }).addTo(layer);
+			const total = L.tooltip({ permanent: true, direction: 'right', offset: [8, 0], className: 'measure-total' });
+			measuring = { layer, line, total, button };
+			button.classList.add('on');
+			map.getContainer().classList.add('measuring');
+		});
+		return bar;
+	}
+});
+
+map.on('click', e => {
+	if (!measuring) return;
+	const point = L.latLng(Math.floor(e.latlng.lat) + 0.5, Math.floor(e.latlng.lng) + 0.5);
+	measuring.line.addLatLng(point);
+	L.circleMarker(point, { radius: 3, color: '#ffd23f', weight: 2, fillOpacity: 1, interactive: false }).addTo(measuring.layer);
+	const points = measuring.line.getLatLngs();
+	if (points.length > 1) measuring.total.setLatLng(point).setContent(measureLabel(points)).addTo(measuring.layer);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && viewer.hidden) stopMeasuring(); });
+
 // --- Start ---
 
 function start(meta) {
@@ -555,6 +611,7 @@ function start(meta) {
 		if (folders.length > 1) control.addBaseLayer(layer, titleOf(folder));
 	}
 	tileLayers[dimension].addTo(map);
+	new Measure().addTo(map);
 	refreshTiles();
 	setInterval(refreshTiles, 30000);
 
