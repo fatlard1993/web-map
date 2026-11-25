@@ -152,12 +152,18 @@ final class Layers {
 		});
 		meta.add("layers", layers);
 		JsonArray folders = new JsonArray();
+		// A folder cannot be read back into the id it came from, and a command needs the id
+		JsonObject ids = new JsonObject();
 		for (String id : config.dimensions) {
 			for (ServerLevel level : server.getAllLevels()) {
-				if (level.dimension().identifier().toString().equals(id)) folders.add(Dimensions.folder(level.dimension()));
+				if (!level.dimension().identifier().toString().equals(id)) continue;
+				String folder = Dimensions.folder(level.dimension());
+				folders.add(folder);
+				ids.addProperty(folder, id);
 			}
 		}
 		meta.add("dimensions", folders);
+		meta.add("ids", ids);
 		JsonArray caves = new JsonArray();
 		for (String id : config.caveDimensions()) caves.add(Dimensions.folder(id));
 		meta.add("caves", caves);

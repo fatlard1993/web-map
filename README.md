@@ -36,7 +36,7 @@ The page can show, over the map:
 
 Each viewer shows or hides layers in the box at the top right (tap it on a phone), and the page remembers their choice in their browser.
 
-Clicking the map says where that spot is, its biome, what it is made of and how high it is, with buttons to copy its coordinates, a `/tp` command or a link to it, and the matching spot in the Nether or overworld. The address bar always holds the dimension and view, so a link sent to someone opens on the same spot. The search box finds players, homes, villages, portals, ships, signs, beacons and deaths by name in any dimension, or goes to typed coordinates; the ruler measures a distance along points clicked in turn, with how long it takes to walk and sprint. Clicking a portal shows its other end.
+Clicking the map says where that spot is, its biome, what it is made of and how high it is, with buttons to copy its coordinates, a `/tp` command that lands in the dimension shown, or a link to it, and the matching spot in the Nether or overworld. The address bar always holds the dimension and view, so a link sent to someone opens on the same spot. The search box finds players, homes, villages, portals, ships, signs, beacons and deaths by name in any dimension, or goes to typed coordinates; the ruler measures a distance along points clicked in turn, with how long it takes to walk and sprint. Clicking a portal shows its other end.
 
 Labels that would overlap gather into one list at the first of them, the rest keeping their dots; clicking a name in it does what clicking that label would, and clicking elsewhere in it zooms in until they spread apart. The map zooms out as far as it takes to see everything drawn, and the button under the zoom buttons shows all of it at once.
 

@@ -72,6 +72,7 @@ document.getElementById('hint-close').addEventListener('click', () => { hint.hid
 // --- Dimensions and tiles ---
 
 let dimension = 'minecraft_overworld';
+let dimensionIds = {};
 let tilesStamp = 0;
 let extents = {};
 const tileLayers = {};
@@ -825,7 +826,9 @@ function spotView(x, z) {
 	};
 	const spot = { y: null };
 	button('Copy x z', b => copy(x + ' ' + (spot.y ?? '~') + ' ' + z, b));
-	button('Copy /tp', b => copy('/tp @s ' + x + ' ' + (spot.y ?? '~') + ' ' + z, b));
+	// A bare /tp lands in whatever dimension its runner stands in, which can be a void
+	const tp = '/tp @s ' + x + ' ' + (spot.y ?? '~') + ' ' + z;
+	button('Copy /tp', b => copy(dimensionIds[dimension] ? '/execute in ' + dimensionIds[dimension] + ' run ' + tp.slice(1) : tp, b));
 	button('Copy link', b => copy(location.origin + linkTo(dimension, x, z, Math.max(map.getZoom(), NATIVE)), b));
 	const other = OTHER_SIDE[dimension];
 	if (other && tileLayers[other[0]]) {
@@ -1040,6 +1043,7 @@ async function refreshWorld() {
 
 function start(meta) {
 	if (meta && meta.spawn) map.setView(at(meta.spawn.x, meta.spawn.z), NATIVE);
+	dimensionIds = (meta && meta.ids) || { minecraft_overworld: 'minecraft:overworld' };
 	const folders = meta && meta.dimensions && meta.dimensions.length ? meta.dimensions : ['minecraft_overworld'];
 	const chosen = kept.get('web-map dimension', null);
 	dimension = folders.includes(chosen) ? chosen : folders[0];
